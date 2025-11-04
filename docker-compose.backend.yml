@@ -1,0 +1,49 @@
+# docker-compose.backend.yml
+version: "3.8"
+
+services:
+  # Local LLM via Ollama
+  ollama:
+    image: ollama/ollama:latest
+    container_name: vrsecretary_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  # VRSecretary FastAPI gateway
+  gateway:
+    build:
+      context: ./backend/gateway
+      dockerfile: Dockerfile
+    container_name: vrsecretary_gateway
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    ports:
+      - "8000:8000"
+    environment:
+      # Backend mode: offline_local_ollama | online_watsonx
+      MODE: "offline_local_ollama"
+      DEBUG: "false"
+
+      # Connect to the Ollama container by service name
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      OLLAMA_MODEL: "llama3"
+      OLLAMA_TIMEOUT: "60.0"
+
+      # Chatterbox TTS is assumed to run on the host (not in this compose)
+      # Change this if you containerize Chatterbox separately.
+      CHATTERBOX_URL: "http://host.docker.internal:4123"
+      CHATTERBOX_TIMEOUT: "30.0"
+
+      # Session settings
+      SESSION_MAX_HISTORY: "10"
+
+    # If you want to load .env from backend/docker/env.example as a base, uncomment:
+    # env_file:
+    #   - ./backend/docker/env.example
+
+volumes:
+  ollama_data:

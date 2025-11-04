@@ -10,7 +10,7 @@
 
 ## ✨ What Is VRSecretary?
 
-VRSecretary is a **reference architecture** and implementation for building AI-powered VR characters:
+VRSecretary is a **production-ready reference architecture** and implementation for building AI-powered VR characters:
 
 - Frontend in **Unreal Engine 5** (VR-ready).
 - Backend in **Python / FastAPI**.
@@ -19,10 +19,11 @@ VRSecretary is a **reference architecture** and implementation for building AI-p
 
 It ships with:
 
-- A **VR secretary avatar** (Scifi Girl v.01 – non-commercial).
-- An **Unreal plugin** (`VRSecretary`) for easy integration.
+- A **VR secretary avatar** (Scifi Girl v.01 – non-commercial demo, GLB ready to import).
+- An **Unreal plugin** (`VRSecretary`) exposing a simple Blueprint-friendly component.
 - A **gateway backend** that exposes a clean `/api/vr_chat` HTTP endpoint.
-- Documentation for extending to other engines (e.g., Unity) via the same API.
+- A **direct Ollama mode** (Unreal → Ollama, no Python), plus a **llama.cpp stub** for in-engine integration later.
+- Documentation to extend the same API to other engines (e.g., Unity).
 
 ---
 
@@ -30,55 +31,60 @@ It ships with:
 
 - **VR-native UX**
   - Built around UE5’s VR template (controllers, teleport, VR camera).
-  - Uses a 3D avatar, audio, and subtitles for a fully immersive experience.
+  - Uses a 3D avatar, audio, and subtitles for an immersive conversational assistant.
 
 - **Flexible LLM Backends**
-  - **Offline (default):** [Ollama](https://ollama.ai/) running locally (e.g. `llama3`, Granite, Mistral, etc.).
+  - **Offline (default):** [Ollama](https://ollama.ai/) on your machine (e.g. `llama3`, Granite, Mistral).
   - **Online (optional):** [IBM watsonx.ai](https://www.ibm.com/watsonx) via official SDK/API.
 
 - **High-Quality Voice**
   - [Chatterbox TTS](https://github.com/rsxdalv/chatterbox) for natural-sounding speech.
-  - Text → WAV audio streamed back to Unreal and played in real-time.
+  - Text → WAV audio streamed back to Unreal and played at runtime.
+
+- **Multiple Backend Modes in Unreal**
+  - **Gateway (Ollama / watsonx)** – UE → FastAPI → LLM → TTS → UE (full text + audio).
+  - **Direct Ollama** – UE → Ollama (OpenAI-style chat completions, text only).
+  - **Local Llama.cpp (stub)** – ready for in-engine llama.cpp binding via `ThirdParty/LlamaCpp`.
 
 - **Modular, Engine-Agnostic Architecture**
-  - Clean REST API (`/api/vr_chat`) that any engine or application can call.
-  - UE plugin is just one client; Unity or custom VR apps can reuse the same backend.
+  - Clean REST API (`/api/vr_chat`) that any engine or app can call.
+  - Unreal plugin is only one possible client; Unity and others can reuse the same backend.
 
-- **Sample Avatar Included**
-  - **Scifi Girl v.01** (non-commercial reference character) imported as GLB.
-  - Ready to plug into the VR demo level as your first AI secretary.
+- **Sample Avatar Included & Ready to Use**
+  - **Scifi Girl v.01** GLB included under CC BY-NC-SA for non-commercial use.
+  - Ready to import and hook up to the secretary Blueprint in the demo project.
 
-- **Production-oriented Structure**
-  - Clear separation of concerns (backend, engine plugins, assets, tools).
-  - Configurable via `.env` and Unreal Project Settings.
-  - Ready for Dockerized deployment of the backend.
+- **Production-Oriented Layout**
+  - Clear separation of backend, engine plugins, assets, and tools.
+  - Configurable via `.env` (backend) and Project Settings (Unreal).
+  - Dockerized backend, load test scripts, and extensible plugin architecture.
 
 ---
 
 ## 🧬 Repository Structure
 
-At a high level:
+High-level layout:
 
 ```text
 VRSecretary/
-├── assets/                  # 3D avatars and related metadata
+├── assets/
 │   └── avatars/
 │       └── scifi_girl_v01/
-│           ├── scifi_girl_v.01.glb          # Example GLB (non-commercial)
+│           ├── scifi_girl_v.01.glb          # Sample GLB (non-commercial demo)
 │           ├── README.md                    # License & usage info
 │           └── DOWNLOAD_INSTRUCTIONS.txt
 │
 ├── backend/
-│   ├── gateway/             # FastAPI backend (LLM + TTS gateway)
+│   ├── gateway/                             # FastAPI backend (LLM + TTS gateway)
 │   │   ├── pyproject.toml
 │   │   ├── README.md
 │   │   └── vrsecretary_gateway/
-│   │       ├── main.py                  # FastAPI app entrypoint
-│   │       ├── config.py                # Pydantic settings
-│   │       ├── api/                     # HTTP routes (/health, /api/vr_chat)
-│   │       ├── llm/                     # Ollama + watsonx.ai clients
-│   │       ├── tts/                     # Chatterbox TTS client
-│   │       └── models/                  # Pydantic schemas & session store
+│   │       ├── main.py                      # FastAPI app entrypoint
+│   │       ├── config.py                    # Pydantic settings
+│   │       ├── api/                         # /health, /api/vr_chat
+│   │       ├── llm/                         # Ollama + watsonx.ai clients
+│   │       ├── tts/                         # Chatterbox TTS client
+│   │       └── models/                      # Pydantic schemas & session store
 │   └── docker/
 │       ├── Dockerfile.gateway
 │       ├── docker-compose.dev.yml
@@ -86,16 +92,33 @@ VRSecretary/
 │
 ├── engine-plugins/
 │   ├── unreal/
-│   │   ├── VRSecretary.uplugin           # Unreal plugin descriptor
-│   │   └── Source/VRSecretary/           # Plugin C++ source
-│   └── unity/                            # (Future) Unity client skeleton
+│   │   ├── VRSecretary.uplugin              # Unreal plugin descriptor
+│   │   └── Source/VRSecretary/
+│   │       ├── VRSecretary.Build.cs
+│   │       ├── Public/
+│   │       │   ├── VRSecretaryComponent.h   # Main C++ component (Blueprint-ready)
+│   │       │   ├── VRSecretarySettings.h    # Project settings (Gateway URL, modes, etc.)
+│   │       │   ├── VRSecretaryChatTypes.h   # Enums, config structs, delegates
+│   │       │   └── VRSecretaryLog.h
+│   │       └── Private/
+│   │           ├── VRSecretaryModule.cpp
+│   │           ├── VRSecretaryComponent.cpp
+│   │           ├── VRSecretarySettings.cpp
+│   │           ├── VRSecretaryLog.cpp
+│   │           └── (optional llama.cpp glue)
+│   │   └── ThirdParty/
+│   │       └── LlamaCpp/
+│   │           ├── Include/                 # Place llama.cpp headers here
+│   │           └── Lib/                     # Place built libs here
+│   └── unity/                               # (Future) Unity client skeleton
 │
 ├── samples/
-│   ├── unreal-vr-secretary-demo/         # Example UE5 VR project
+│   ├── unreal-vr-secretary-demo/            # Example UE5 VR project
 │   │   ├── VRSecretaryDemo.uproject
 │   │   ├── Config/
-│   │   └── Content/                      # Blueprints, UI, etc.
-│   └── backend-notebooks/                # Jupyter prototyping
+│   │   └── Content/                         # Blueprints, UI, secretary avatar BP, etc.
+│   └── backend-notebooks/
+│       └── prototype-calls.ipynb            # Jupyter prototyping
 │
 ├── docs/
 │   ├── overview.md
@@ -106,18 +129,22 @@ VRSecretary/
 │
 ├── tools/
 │   ├── scripts/
-│   │   ├── start_local_stack.sh          # Convenience startup script (optional)
+│   │   ├── apply_vrsecretary_patch.sh       # Plugin patch/upgrade script
+│   │   ├── start_local_stack.sh             # Convenience stack startup (optional)
 │   │   └── generate_openapi_client.sh
 │   └── perf/
 │       ├── load_test_vr_chat.k6.js
 │       └── profiling_notes.md
 │
-├── .github/                # CI, issue templates, etc.
+├── .github/                                 # CI/CD workflows, issue templates
 ├── LICENSE
 ├── CONTRIBUTING.md
 ├── CODE_OF_CONDUCT.md
-└── README.md               # (This file)
+└── README.md                                # (This file)
 ````
+
+For plugin-specific usage, see
+`engine-plugins/unreal/VRSecretary/README.md`.
 
 ---
 
@@ -125,43 +152,39 @@ VRSecretary/
 
 **Host machine:**
 
-* **OS:** Windows 10/11 (recommended for Unreal), Linux/macOS usable for backend only.
+* **OS:** Windows 10/11 (recommended for Unreal). Linux/macOS fine for backend-only.
 * **CPU:** Modern quad-core or better.
-* **RAM:** 16 GB (32 GB recommended for local LLMs).
-* **GPU:** NVIDIA GPU with CUDA (recommended for Ollama + Chatterbox acceleration).
+* **RAM:** 16 GB minimum (32 GB recommended for local LLMs).
+* **GPU:** NVIDIA GPU with CUDA is highly recommended for Ollama + Chatterbox acceleration.
 
 **Software:**
 
-* **Unreal Engine:** 5.3+ with C++ and VR modules installed.
-* **Visual Studio 2022** (on Windows) with “Game development with C++”.
+* **Unreal Engine:** 5.3+ (with C++ and VR templates).
+* **Visual Studio 2022** (Windows) with *Game development with C++* workload.
 * **Python:** 3.10+.
-* **Node / k6:** only if you run the load tests (optional).
-* **Docker:** optional, if you prefer containerized backend.
+* **Docker:** optional (for running backend via compose).
+* **Node + k6:** optional (for load testing).
 
 ---
 
-## 🚀 End-to-End Quick Start (Local Machine)
+## 🚀 End-to-End Quick Start
 
-This walks you through:
+This flow gets you from clone → VR secretary answering you in VR.
 
-1. Setting up and running the backend.
-2. Starting Ollama (LLM) and Chatterbox (TTS).
-3. Opening the Unreal demo and talking to the VR secretary.
-
-### 0. Clone the Repo
+### 0. Clone the Repository
 
 ```bash
 git clone https://github.com/ruslanmv/VRSecretary.git
 cd VRSecretary
 ```
 
-> Replace the URL with your actual Git repo when you publish.
+> Update the URL if you’ve forked or renamed the repo.
 
 ---
 
-### 1. Start the Backend (FastAPI Gateway)
+### 1. Backend: FastAPI Gateway
 
-#### 1.1 Create and activate a virtual environment (recommended)
+#### 1.1 Create and activate a virtual environment
 
 ```bash
 cd backend/gateway
@@ -179,19 +202,19 @@ python -m venv .venv
 
 ```bash
 pip install -e .
-# Optional extra: watsonx support
+# Optional watsonx support:
 # pip install -e ".[watsonx]"
 ```
 
 #### 1.3 Configure environment
 
-Copy the example:
+Copy the template:
 
 ```bash
 cp ../docker/env.example .env
 ```
 
-Edit `.env` and set at least:
+Open `.env` and set at least:
 
 ```env
 MODE=offline_local_ollama
@@ -202,7 +225,16 @@ OLLAMA_MODEL=llama3
 CHATTERBOX_URL=http://localhost:4123
 ```
 
-> For **watsonx.ai** mode, switch `MODE=online_watsonx` and fill the `WATSONX_*` variables too.
+For **watsonx.ai**, switch and fill the credentials:
+
+```env
+MODE=online_watsonx
+
+WATSONX_URL=https://us-south.ml.cloud.ibm.com
+WATSONX_PROJECT_ID=your-project-id
+WATSONX_MODEL_ID=ibm/granite-13b-chat-v2
+WATSONX_API_KEY=your-api-key
+```
 
 #### 1.4 Run the gateway
 
@@ -210,61 +242,63 @@ CHATTERBOX_URL=http://localhost:4123
 uvicorn vrsecretary_gateway.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-You should now have:
+Check:
 
-* OpenAPI docs at: [http://localhost:8000/docs](http://localhost:8000/docs)
-* Health endpoint: [http://localhost:8000/health](http://localhost:8000/health)
+* API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+* Health: [http://localhost:8000/health](http://localhost:8000/health)
 
 ---
 
-### 2. Start the LLM (Ollama)
+### 2. LLM: Start Ollama
 
-Install Ollama from the official site, then:
+Install from [https://ollama.ai/](https://ollama.ai/).
+
+Then in a terminal:
 
 ```bash
-# Start the Ollama server
+# Run Ollama server
 ollama serve
 ```
 
-In another terminal:
+In a second terminal:
 
 ```bash
-# Pull a model (example: Llama 3)
+# Download a model
 ollama pull llama3
 ```
 
-You can test it quickly:
+Confirm it’s available:
 
 ```bash
 curl http://localhost:11434/v1/models
 ```
 
-Make sure the model name in `.env` matches (e.g. `OLLAMA_MODEL=llama3`).
+Ensure `.env` has `OLLAMA_MODEL=llama3` (or whichever you use).
 
 ---
 
-### 3. Start the TTS (Chatterbox)
+### 3. TTS: Start Chatterbox
 
-Install Chatterbox according to its README, then run:
+Install [Chatterbox](https://github.com/rsxdalv/chatterbox) per its README, then:
 
 ```bash
 chatterbox-server --port 4123
 ```
 
-To smoke-test TTS:
+Quick sanity check:
 
 ```bash
 curl -X POST http://localhost:4123/v1/audio/speech \
   -H "Content-Type: application/json" \
-  -d '{ "input": "Hello from Ailey.", "temperature": 0.6, "cfg_weight": 0.5, "exaggeration": 0.35 }' \
+  -d '{"input": "Hello from Ailey.", "temperature": 0.6, "cfg_weight": 0.5, "exaggeration": 0.35}' \
   --output test.wav
 ```
 
-Play `test.wav` with any audio player to confirm it works.
+Play `test.wav` to verify audio.
 
 ---
 
-### 4. Test the Backend API (Optional but Recommended)
+### 4. Sanity Check: Backend `/api/vr_chat`
 
 With gateway + Ollama + Chatterbox running:
 
@@ -274,7 +308,7 @@ curl -X POST http://localhost:8000/api/vr_chat \
   -d '{"session_id": "test-123", "user_text": "Hello Ailey, who are you?"}'
 ```
 
-Expected JSON response:
+Expected response:
 
 ```json
 {
@@ -283,48 +317,48 @@ Expected JSON response:
 }
 ```
 
-If this works, Unreal will be able to talk to the same endpoint.
+If this works, Unreal can use the same endpoint.
 
 ---
 
-### 5. Unreal Engine: Plugin & Sample Project
+### 5. Unreal: Sample Project (Recommended First Run)
 
-You have two options:
-
-#### 5.1 Use the Sample Project (Recommended First)
-
-1. Open **Unreal Engine 5.3+**.
-
-2. In Explorer / Finder, go to:
+1. In Explorer/Finder, go to:
 
    ```text
    VRSecretary/samples/unreal-vr-secretary-demo/
    ```
 
-3. Right-click `VRSecretaryDemo.uproject` → **Generate Visual Studio project files**.
+2. Right-click `VRSecretaryDemo.uproject` → **Generate Visual Studio project files**.
 
-4. Double-click `VRSecretaryDemo.uproject` to open it in Unreal.
+3. Open `VRSecretaryDemo.uproject` with Unreal Engine 5.3+.
 
-5. When prompted, let UE build the project (it will compile the `VRSecretary` C++ plugin).
+4. Let Unreal build the C++ modules (including the `VRSecretary` plugin).
 
-6. In Unreal, open:
+5. In the editor:
 
-   * **Edit → Plugins** and verify **VRSecretary** is enabled.
-   * **Edit → Project Settings → Plugins → VRSecretary** and ensure:
+   * **Edit → Plugins** → search for **VRSecretary** and confirm it’s **enabled**.
+   * **Edit → Project Settings → Plugins → VRSecretary**:
 
-     * Gateway URL = `http://localhost:8000`
-     * Backend mode matches `.env` (`offline_local_ollama` or `online_watsonx`).
+     * Gateway URL: `http://localhost:8000`
+     * Backend Mode: **Gateway (Ollama)** (or **Gateway (watsonx)** if using cloud mode).
+     * Timeout: ~60 seconds is safe while experimenting.
 
-7. Import or verify the avatar:
+6. Avatar:
 
-   * The GLB `assets/avatars/scifi_girl_v01/scifi_girl_v.01.glb` can be imported into the demo project.
-   * In the sample, you may already have a `BP_SecretaryAvatar` blueprint referencing a skeletal mesh. You can retarget that to the Scifi Girl mesh.
+   * Sample GLB is at `assets/avatars/scifi_girl_v01/scifi_girl_v.01.glb`.
+   * Import it into the demo project’s Content folder (e.g., `/Game/Characters/ScifiGirl/`).
+   * Use or retarget the sample `BP_SecretaryAvatar` to this skeletal mesh if needed.
 
-8. Connect VR headset and press **Play → VR Preview**.
+7. Connect your VR headset and hit **Play → VR Preview**.
 
-You should see the secretary avatar in front of you. Using the input configured in `BP_VRSecretaryManager` (e.g., a controller button + keyboard input), you can send messages and hear Ailey answer via TTS.
+Use the included Blueprint (`BP_VRSecretaryManager`) input actions (e.g., controller + keyboard) to send text. You should see and hear Ailey respond.
 
-#### 5.2 Add the Plugin to Your Own Project
+---
+
+### 6. Unreal: Using the Plugin in Your Own Project
+
+You can integrate VRSecretary into any UE 5.3+ C++ project.
 
 1. Copy the plugin:
 
@@ -334,26 +368,51 @@ You should see the secretary avatar in front of you. Using the input configured 
    cp -r engine-plugins/unreal/VRSecretary /path/to/YourUEProject/Plugins/
    ```
 
-2. Right-click your project’s `.uproject` → **Generate Visual Studio project files**.
+2. Right-click your `.uproject` → **Generate Visual Studio project files**.
 
-3. Open the project, then in Plugins make sure **VRSecretary** is enabled.
+3. Open and build the project in Visual Studio (**Development Editor / Win64**).
 
-4. Create a Blueprint Manager that owns a `VRSecretaryComponent` and wires `OnResponse` → your Avatar.
+4. In Unreal:
 
-For detailed step-by-step with screenshots, see:
-`docs/unreal-integration.md`
+   * **Edit → Plugins** → enable **VRSecretary** if not already.
+   * **Edit → Project Settings → Plugins → VRSecretary**:
+
+     * Set **Gateway URL**, **Backend Mode**, and **HTTP Timeout**.
+
+5. In your Blueprint:
+
+   * Add a **VRSecretaryComponent** to an Actor (e.g., VR manager or Player Pawn).
+   * Bind to:
+
+     * `OnAssistantResponse(AssistantText, AudioBase64)` → update subtitles, trigger avatar voice.
+     * `OnError(ErrorMessage)` → show user feedback.
+
+6. Call:
+
+   ```cpp
+   SendUserText(UserText, ChatConfig)
+   ```
+
+   from Blueprint (e.g., on button press). The component will:
+
+   * Use **Gateway** mode: call the FastAPI backend → LLM → TTS → return text + base64 audio.
+   * Use **DirectOllama** mode: call Ollama directly → return text only.
+   * Use **LocalLlamaCpp** (stub): currently logs and falls back to Gateway; ready for in-engine llama.cpp once you wire up `ThirdParty/LlamaCpp`.
+
+For detailed, step-by-step integration (Blueprint graphs, widget setup, etc.), see:
+`docs/unreal-integration.md` and `engine-plugins/unreal/VRSecretary/README.md`.
 
 ---
 
-## ⚙️ Configuration Summary
+## ⚙️ Backend & Plugin Configuration Summary
 
-### Backend (`.env` in `backend/gateway/`)
+### Backend (`backend/gateway/.env`)
 
-Key values:
+Key options:
 
 ```env
-# Mode: offline (Ollama) or online (watsonx.ai)
-MODE=offline_local_ollama   # or online_watsonx
+# Core mode: offline (Ollama) or online (watsonx.ai)
+MODE=offline_local_ollama        # or online_watsonx
 
 # Ollama (local LLM)
 OLLAMA_BASE_URL=http://localhost:11434
@@ -375,80 +434,80 @@ CHATTERBOX_TIMEOUT=30.0
 SESSION_MAX_HISTORY=10
 ```
 
-### Unreal Plugin Settings
-
-In **Project Settings → Plugins → VRSecretary** you can configure:
+### Unreal Plugin Settings (Project Settings → Plugins → VRSecretary)
 
 * **Gateway URL** – e.g. `http://localhost:8000`
-* **Request Timeout** – e.g. `60.0`
-* **Backend Mode** – e.g. `Gateway (Ollama)` / `Gateway (Watsonx)`
-* **Default Session ID Behavior** – auto-generate or set explicitly.
+* **HTTP Timeout** – e.g. `60.0`
+* **Backend Mode** (`EVRSecretaryBackendMode`):
+
+  * Gateway (Ollama)
+  * Gateway (watsonx.ai)
+  * DirectOllama
+  * LocalLlamaCpp (stub)
+* **Direct Ollama URL** – e.g. `http://localhost:11434`
+* **Direct Ollama Model** – e.g. `llama3`
+
+You can also override the backend mode per component via `BackendModeOverride` on `VRSecretaryComponent`.
 
 ---
 
 ## 🧠 AI Persona: Ailey
 
-The default secretary persona is defined via a **system prompt** in the backend:
+The default secretary persona **Ailey** is defined in the backend as a system prompt. She is:
 
 * Professional yet friendly.
-* Business-focused (planning, drafting emails, scheduling suggestions).
-* VR-aware (reference the “virtual office” context).
-* Concise (responses are spoken aloud, so they avoid big monologues).
+* Good at planning, drafting, and structuring work.
+* VR-aware (references the “virtual office” context).
+* Concise (responses are spoken aloud).
 
-You can customize Ailey by editing the `SYSTEM_PROMPT` in:
+You can customize Ailey by editing `SYSTEM_PROMPT` in:
 
 ```text
 backend/gateway/vrsecretary_gateway/api/vr_chat_router.py
 ```
 
-See `docs/persona-ailey.md` for detailed examples and variants
-(formal, casual, legal assistant, technical assistant, etc.).
+More persona variants (formal, casual, legal, technical, etc.) are documented in:
+`docs/persona-ailey.md`.
 
 ---
 
-## 🎭 Avatar: Scifi Girl v.01 (Non-Commercial)
+## 🎭 Avatar: Scifi Girl v.01 (Non-Commercial Demo)
 
-The sample avatar used in this project is:
+The sample avatar used in the demo:
 
 * **Name:** *Scifi Girl v.01*
 * **Author:** patrix
-* **Source:** [Sketchfab](https://sketchfab.com/3d-models/scifi-girl-v01-96340701c2ed4d37851c7d9109eee9c0)
-* **License:** [CC BY-NC-SA](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+* **Source:** [https://sketchfab.com/3d-models/scifi-girl-v01-96340701c2ed4d37851c7d9109eee9c0](https://sketchfab.com/3d-models/scifi-girl-v01-96340701c2ed4d37851c7d9109eee9c0)
+* **License:** [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
-In this repository:
+In this repo:
 
 ```text
 assets/avatars/scifi_girl_v01/
-  ├── scifi_girl_v.01.glb          # Example model for your local use
-  ├── README.md                    # License details & attribution
+  ├── scifi_girl_v.01.glb          # Sample 3D model (non-commercial reference)
+  ├── README.md                    # Detailed license & attribution
   └── DOWNLOAD_INSTRUCTIONS.txt
 ```
 
-**Important:**
+**Important license notes:**
 
-* This model is included **only as a non-commercial reference**.
-* It must not be used commercially unless you have explicit permission from the creator.
-* If you plan to:
+* This avatar is **non-commercial only**.
+* You **must not** use it in commercial products without explicit permission from the creator.
+* For commercial use:
 
-  * Sell a game,
-  * Distribute a commercial product,
-  * Or repackage this repository for commercial use,
+  * Replace with a marketplace avatar (Unreal Marketplace, Sketchfab commercial asset, etc.).
+  * Or use a CC0/public domain model.
+  * Or create/commission your own model.
 
-  then **replace this avatar** with:
-
-  * A commercial asset you’ve licensed, or
-  * A CC0/public domain avatar, or
-  * A model you created yourself/commissioned.
-
-The core **VRSecretary code** itself remains **MIT-licensed** and is independent from this asset.
+The avatar is **licensed separately** from the VRSecretary code.
 
 ---
 
-## 🛠️ Development & Advanced Usage
+## 🛠️ Development, Docker & Testing
 
-### Run Backend with Docker Compose
+### Dockerized Backend
 
-If you prefer containers:
+From the repo root:
 
 ```bash
 cd backend/docker
@@ -458,61 +517,70 @@ docker-compose -f docker-compose.dev.yml up
 This will:
 
 * Start **Ollama** in a container.
-* Build and run the **gateway** container.
+* Build & run the **gateway** container.
 
-You still need to run **Chatterbox** separately (often directly on the host for GPU access):
+Chatterbox is typically run on the host for GPU access:
 
 ```bash
 chatterbox-server --port 4123
 ```
 
-Adjust `CHATTERBOX_URL` to `http://host.docker.internal:4123` (already set in `docker-compose.dev.yml`).
+The compose file already uses `CHATTERBOX_URL=http://host.docker.internal:4123`.
 
-### Run Tests (Backend)
+### Backend Tests
 
 From `backend/gateway`:
 
 ```bash
 pytest
-```
-
-With coverage:
-
-```bash
+# or
 pytest --cov=vrsecretary_gateway --cov-report=html
 ```
 
 ### Load Testing
 
-From `tools/perf` you can use the `k6` script:
+From `tools/perf`:
 
 ```bash
 k6 run load_test_vr_chat.k6.js
 ```
 
-This stresses `/api/vr_chat` and gives you latency / throughput metrics.
+This load-tests `/api/vr_chat` to measure latency/throughput under concurrent users.
 
 ---
 
-## 🧱 High-Level Architecture
+## 🧱 Architecture Snapshot
 
 Very briefly:
 
-* **Unreal (VR)**:
+**Unreal (VR Frontend)**
 
-  * `VRSecretaryComponent` sends `user_text` + `session_id` via HTTP to the backend.
-  * Receives `assistant_text` + `audio_wav_base64`.
-  * Blueprint manager forwards text/audio to the avatar for playback + subtitles.
+* `VRSecretaryComponent` (C++/Blueprint):
 
-* **Backend (FastAPI)**:
+  * Accepts `UserText` + `FVRSecretaryChatConfig`.
+  * Chooses backend mode (Gateway / DirectOllama / LocalLlamaCpp).
+  * Sends HTTP requests and exposes two events:
 
-  * Validates request (`VRChatRequest`).
-  * Builds dialogue context (system + user messages, optional history).
-  * Uses `BaseLLMClient` abstraction to call **Ollama** or **watsonx.ai**.
-  * Sends the LLM’s text to **Chatterbox** for speech.
-  * Returns the result as `VRChatResponse`.
+    * `OnAssistantResponse(AssistantText, AudioBase64)`
+    * `OnError(ErrorMessage)`
+* Blueprint manager (`BP_VRSecretaryManager`) orchestrates:
 
-See `docs/architecture.md` for full diagrams and more detail.
+  * User input (VR controllers, widgets).
+  * Forwarding to `VRSecretaryComponent`.
+  * Driving the avatar (`BP_SecretaryAvatar`) with text + audio.
+
+**Gateway (FastAPI Backend)**
+
+* `POST /api/vr_chat`:
+
+  * Validates `VRChatRequest` (`session_id`, `user_text`).
+  * Assembles messages (system prompt + user + optional history).
+  * Calls the selected LLM (Ollama or watsonx.ai) via `BaseLLMClient`.
+  * Sends the LLM response text to **Chatterbox** for speech synthesis.
+  * Returns `VRChatResponse { assistant_text, audio_wav_base64 }`.
+
+Detailed diagrams and explanations are in:
+`docs/architecture.md` and `docs/engine-agnostic-api.md`.
 
 ---
 
@@ -520,30 +588,29 @@ See `docs/architecture.md` for full diagrams and more detail.
 
 Contributions are welcome!
 
-* Read the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-* Check out [CONTRIBUTING.md](CONTRIBUTING.md) for:
+* Please read the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+* See [CONTRIBUTING.md](CONTRIBUTING.md) for:
 
-  * Branching strategy.
-  * Code style (Python + C++).
-  * How to run tests.
-  * How to propose new features or backends.
+  * Branching & workflow.
+  * Coding standards (Python, C++, Blueprint).
+  * How to run tests & style checks.
 
 Ideas for contributions:
 
-* Unity client implementation.
-* Mouth/lip-sync integration.
+* Full **Unity** client implementation.
+* In-engine **llama.cpp** integration using `ThirdParty/LlamaCpp`.
+* RAG (Retrieval-Augmented Generation) with local docs.
 * Additional LLM backends (OpenAI, Anthropic, etc.).
-* RAG integration with local documents.
-* Better VR UX / interaction patterns.
+* Better VR UX, gestures, and spatial interactions.
 
 ---
 
 ## 📄 License
 
-* **Code:** [Apache 2.0](LICENSE) – do whatever you want with attribution.
+* **Code:** [Apache 2.0](LICENSE) – you can use, modify, and ship it (with attribution).
 * **Scifi Girl v.01 avatar:** CC BY-NC-SA – **non-commercial only** (see `assets/avatars/scifi_girl_v01/README.md`).
 
-When in doubt, treat the code and the avatar as having **separate licenses**. Replace the avatar for any commercial or redistributable product.
+Treat code and assets as having **separate licenses**. For any commercial product, replace or remove non-commercial assets.
 
 ---
 
@@ -553,8 +620,11 @@ When in doubt, treat the code and the avatar as having **separate licenses**. Re
 * [IBM watsonx.ai](https://www.ibm.com/watsonx)
 * [Chatterbox TTS](https://github.com/rsxdalv/chatterbox)
 * [Unreal Engine](https://www.unrealengine.com/)
-* [Llama-Unreal (reference inspiration)](https://github.com/ggerganov/llama.cpp) *(via Unreal integrations)*
+* [llama.cpp](https://github.com/ggerganov/llama.cpp) (for potential in-engine integration)
 
 ---
 
-VRSecretary is meant to be a **solid starting point**. Clone it, run it, break it, and then shape it into your own AI-powered VR experience. ✨
+VRSecretary is designed as a **solid, realistic starting point** for AI characters in VR.
+Run it, explore it, and then bend it into whatever virtual assistant your world needs. ✨
+
+
