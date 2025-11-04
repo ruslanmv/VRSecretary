@@ -1,0 +1,18 @@
+# Unreal
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+*.sln
+.vscode/
+.vs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# OS
+.DS_Store
+Thumbs.db

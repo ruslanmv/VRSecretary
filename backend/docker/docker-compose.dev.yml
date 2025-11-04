@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+
+  tts:
+    image: ghcr.io/resemble-ai/chatterbox-tts-server:latest
+    ports:
+      - "4123:4123"
+
+  gateway:
+    build:
+      context: ../
+      dockerfile: backend/docker/Dockerfile.gateway
+    environment:
+      - MODE=offline_local_ollama
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - CHATTERBOX_URL=http://tts:4123
+    ports:
+      - "8000:8000"

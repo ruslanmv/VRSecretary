@@ -1,0 +1,32 @@
+IMPORTANT: Avatar Asset Not Included
+
+The Scifi Girl v.01 3D model is NOT distributed in this repository due to:
+1. File size (too large for Git)
+2. License restrictions (CC BY-NC-SA requires explicit distribution permission)
+
+TO GET THE AVATAR:
+
+1. Visit: https://sketchfab.com/3d-models/scifi-girl-v01-96340701c2ed4d37851c7d9109eee9c0
+
+2. Click "Download 3D Model"
+
+3. Select:
+   - Format: glTF (.glb)
+   - Texture resolution: 1k (recommended) or 2k
+
+4. Save as: scifi_girl_v.01.glb
+
+5. Place the file in this directory: assets/avatars/scifi_girl_v01/
+
+6. Import to Unreal Engine:
+   - In Unreal Editor: Content Browser → Import
+   - Select the .glb file
+   - Import settings: Skeletal Mesh, Import Materials and Textures
+   - Target folder: Content/Characters/ScifiGirl/
+
+ALTERNATIVE: Use a Different Avatar
+
+For commercial projects or if you prefer a different look:
+- Unreal Marketplace: MetaHumans, Character packs
+- Sketchfab: Search for CC0 or commercial avatars
+- Custom: Commission or create your own

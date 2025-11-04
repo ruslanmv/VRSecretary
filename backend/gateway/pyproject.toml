@@ -1,0 +1,15 @@
+[project]
+name = "vrsecretary-gateway"
+version = "0.1.0"
+description = "AI gateway for VRSecretary (Ollama, watsonx.ai, Chatterbox TTS)"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx",
+    "pydantic>=2.0",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "requests-mock"]
