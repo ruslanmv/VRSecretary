@@ -38,6 +38,40 @@ Please install these before you continue:
 
    * Install from the Epic Games Launcher.
    * When installing, enable the C++ game development option.
+   Unreal and a C++ toolchain are required to open and run the demo project.
+
+   **Install the Epic Games Launcher**
+
+   * Go to the official Unreal download page:  
+     <https://www.unrealengine.com/en-US/download>
+   * Download and run the **Epic Games Launcher** installer for your platform.
+   * When prompted, sign in or create a free Epic Games account.
+
+   **Install Unreal Engine 5.3+ from the Launcher**
+
+   * Open the **Epic Games Launcher**.
+   * In the left sidebar, click **Unreal Engine → Library**.
+   * Under **Engine Versions**, click the small `+` button to add a new version.
+   * Choose **5.3** or any newer 5.x version (5.3, 5.4, 5.5, 5.6, etc.).
+   * Click **Install**, choose an install location, and wait for the download to finish.
+
+   **Install C++ build tools for Unreal (Windows only)**
+
+   Unreal C++ projects (like this demo) need Visual Studio or similar C++ tools.
+
+   * Download **Visual Studio Community 2022** (free) from:  
+     <https://visualstudio.microsoft.com/vs/community/>
+   * Run the installer and, in the **Workloads** tab, enable:
+     * **Game development with C++**
+   * Make sure the default optional components stay checked (Windows 10/11 SDK, C++ tools,
+     and Visual Studio tools for Unreal Engine).
+   * Finish the installation and reboot if requested.
+
+   If you are new to Unreal, the official “Install Unreal Engine” and “Getting Started” docs
+   are useful:
+
+   * Install guide: <https://dev.epicgames.com/documentation/en-us/unreal-engine/install-unreal-engine>  
+   * Getting started: <https://dev.epicgames.com/documentation/en-us/unreal-engine/get-started>
 
 2. **Git**
 

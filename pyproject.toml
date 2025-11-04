@@ -6,7 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "simple-environment"
 version = "0.1.1"                               # bump so installers don't cache 0.1.0
 description = "Minimal environment for Jupyter Notebook (Python 3.11) with Ollama client, for VRSecretary development."
-requires-python = ">=3.11,<3.13"
+# Chatterbox + Torch stack is really tested on 3.11; avoid 3.12 for now
+requires-python = ">=3.11,<3.12"
 
 authors = [
   { name = "Ruslan Magana Vsevolodovna" }
@@ -29,7 +30,13 @@ dependencies = [
   "notebook>=7.2",                              # modern Notebook
   "ipykernel>=6.29",
   "ollama>=0.6,<1.0",                           # pin to a stable client range
-  "chatterbox-tts>=0.1.4",
+
+  # --- TTS stack: versions aligned with chatterbox-tts 0.1.4's ecosystem ---
+  "numpy==1.25.2",                              # within chatterbox-tts range >=1.24,<1.26
+  "onnx==1.19.0",                               # works with ml-dtypes 0.5.x
+  "ml-dtypes==0.5.3",                           # exposes float4_e2m1fn, fixes your crash
+  "chatterbox-tts==0.1.4",                      # your TTS engine
+  "chatterbox-server[server]==0.1.4",           # HTTP API + CLI `chatterbox-server`
 ]
 
 [project.optional-dependencies]
@@ -61,6 +68,6 @@ testpaths = ["backend/gateway/tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
 
-# ----------------- ADD THIS SECTION -----------------
+# ----------------- uv build hacks -----------------
 [tool.uv.extra-build-dependencies]
-pkuseg = ["numpy"]
+pkuseg = ["numpy==1.25.2"]
