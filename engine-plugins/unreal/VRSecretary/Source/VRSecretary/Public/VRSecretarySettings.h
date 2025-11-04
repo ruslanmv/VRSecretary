@@ -7,6 +7,10 @@
 
 /**
  * Global project settings for VRSecretary.
+ *
+ * These appear under Project Settings → Plugins → VRSecretary.
+ * They provide defaults which individual UVRSecretaryComponent instances
+ * can optionally override.
  */
 UCLASS(config=Game, defaultconfig, meta=(DisplayName="VRSecretary Settings"))
 class VRSECRETARY_API UVRSecretarySettings : public UDeveloperSettings
@@ -16,24 +20,28 @@ class VRSECRETARY_API UVRSecretarySettings : public UDeveloperSettings
 public:
     UVRSecretarySettings();
 
-    /** Base URL of the VRSecretary Gateway backend (FastAPI). */
-    UPROPERTY(EditAnywhere, config, Category="Gateway", meta=(DisplayName="Gateway URL"))
+    /** Base URL of the FastAPI gateway (e.g. http://localhost:8000). */
+    UPROPERTY(EditAnywhere, config, Category="Gateway")
     FString GatewayUrl;
 
-    /** Backend mode for LLM calls. */
-    UPROPERTY(EditAnywhere, config, Category="Backend", meta=(DisplayName="Backend Mode"))
+    /** Default backend mode used when a component does not override it. */
+    UPROPERTY(EditAnywhere, config, Category="Gateway")
     EVRSecretaryBackendMode BackendMode;
 
-    /** Default request timeout in seconds for HTTP calls. */
-    UPROPERTY(EditAnywhere, config, Category="HTTP", meta=(ClampMin="1.0", UIMin="1.0"))
+    /** HTTP timeout in seconds for all backend calls. */
+    UPROPERTY(EditAnywhere, config, Category="Gateway", meta=(ClampMin="1.0", UIMin="1.0"))
     float HttpTimeout;
 
-    /** Base URL of the Ollama server (used in DirectOllama mode). */
-    UPROPERTY(EditAnywhere, config, Category="Direct Ollama")
+    /**
+     * Base URL of the OpenAI-compatible Ollama (or other) endpoint,
+     * used when EVRSecretaryBackendMode::DirectOllama is selected.
+     * Example: http://localhost:11434
+     */
+    UPROPERTY(EditAnywhere, config, Category="DirectOllama")
     FString DirectOllamaUrl;
 
-    /** Default Ollama model name (for DirectOllama mode). */
-    UPROPERTY(EditAnywhere, config, Category="Direct Ollama")
+    /** Model name to send to the OpenAI-style /v1/chat/completions endpoint. */
+    UPROPERTY(EditAnywhere, config, Category="DirectOllama")
     FString DirectOllamaModel;
 
     // UDeveloperSettings interface

@@ -1,236 +1,192 @@
 #!/usr/bin/env bash
 #
-# examples/install.sh
+# demo/install.sh
 #
-# Interactive helper to set up the VRSecretary backend environment.
-# - Creates a .venv at the repo root (Python 3.11)
-# - Installs root project (simple-environment)
-# - Installs backend/gateway (with dev + watsonx extras if available)
-# - Copies backend/docker/env.example to backend/gateway/.env (if missing)
+# Friendly helper script for the VRSecretary demo.
 #
-# It does NOT start servers for you permanently; it prints next steps
-# (ollama serve, chatterbox-server, uvicorn / make run-gateway).
+# This script now uses the top-level Makefile to do most of the work for you:
 #
-# Works on:
-#   - macOS / Linux (bash)
-#   - Windows via Git Bash / WSL
+#   - Creates a Python virtual environment
+#   - Installs all Python dependencies (root + VRSecretary backend)
+#   - Installs & checks Ollama (best effort)
+#   - Registers a Jupyter kernel (optional, for notebooks)
+#
+# It is meant for **non-technical** users. Just run it from Git Bash or a Unix
+# terminal and follow the messages on screen.
+#
+# Requirements (installed once):
+#   - Git (for Git Bash on Windows)
+#   - Python 3.11 (or compatible, as configured in the Makefile)
+#   - The VRSecretary repo checked out
+#
+# This script does NOT:
+#   - Install Unreal Engine (you do that via Epic Games Launcher)
+#   - Install Chatterbox (see the main README for that)
+#   - Start the servers automatically every time (see the end of the script for next steps)
 #
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# ---------------------------------------------------------------------------
+# Locate the repo root (folder that contains the Makefile)
+# ---------------------------------------------------------------------------
 
-echo "============================================="
-echo " VRSecretary interactive installer"
-echo " Repo root: $REPO_ROOT"
-echo "============================================="
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+echo "==============================================="
+echo " VRSecretary Demo - One-Time Setup (Makefile) "
+echo "==============================================="
+echo
+echo " Script location : ${SCRIPT_DIR}"
+echo " Repo root       : ${ROOT}"
 echo
 
-cd "$REPO_ROOT"
+cd "${ROOT}"
 
-# -------------------------------------------------------------
-# Helper: prompt yes/no with default (Y/n or y/N)
-# -------------------------------------------------------------
-ask_yes_no() {
-  local prompt="$1"
-  local default="$2"  # "y" or "n"
-  local reply
+# ---------------------------------------------------------------------------
+# Check that the Makefile exists and that 'make' is available
+# ---------------------------------------------------------------------------
 
-  while true; do
-    if [[ "$default" == "y" ]]; then
-      read -r -p "$prompt [Y/n] " reply || reply=""
-      reply="${reply:-y}"
-    else
-      read -r -p "$prompt [y/N] " reply || reply=""
-      reply="${reply:-n}"
-    fi
-
-    case "$reply" in
-      [Yy]* ) return 0 ;;
-      [Nn]* ) return 1 ;;
-      * ) echo "Please answer y or n." ;;
-    esac
-  done
-}
-
-# -------------------------------------------------------------
-# Detect a Python 3.11 interpreter
-# -------------------------------------------------------------
-detect_python() {
-  local candidates=("python3.11" "python3" "py -3.11" "python")
-  for cmd in "${candidates[@]}"; do
-    if command -v ${cmd%% *} >/dev/null 2>&1; then
-      # If it's "py -3.11", we accept as-is
-      local ver
-      if [[ "$cmd" == "py -3.11" ]]; then
-        ver="$($cmd -V 2>&1 || true)"
-      else
-        ver="$($cmd -V 2>&1 || true)"
-      fi
-      if [[ "$ver" == *" 3.11."* ]]; then
-        echo "$cmd"
-        return
-      fi
-    fi
-  done
-  echo ""
-}
-
-PY_CMD="$(detect_python || true)"
-
-if [[ -z "$PY_CMD" ]]; then
-  echo "❌ Could not find a Python 3.11 interpreter automatically."
-  read -r -p "Please type the command to run Python 3.11 (e.g. 'python3.11' or 'py -3.11'): " PY_CMD
+if [[ ! -f "Makefile" ]]; then
+  echo "❌ I could not find a Makefile in: ${ROOT}"
+  echo "   Please make sure you are inside the VRSecretary repository."
+  exit 1
 fi
 
-echo "Using Python: $PY_CMD"
+if ! command -v make >/dev/null 2>&1; then
+  echo "❌ The 'make' command is not available on this system."
+  echo
+  echo "On Windows:"
+  echo "  - Make sure you installed Git for Windows."
+  echo "  - Use the Git Bash terminal to run this script."
+  echo "  - If 'make' is still missing, install it via your package manager"
+  echo "    (for example: MSYS2, Chocolatey, or similar)."
+  echo
+  echo "On macOS / Linux:"
+  echo "  - Install build tools, e.g. 'xcode-select --install' on macOS,"
+  echo "    or 'sudo apt install build-essential' on Ubuntu."
+  echo
+  echo "After that, run this script again:"
+  echo "  bash demo/install.sh"
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Run the main Makefile targets
+# ---------------------------------------------------------------------------
+
+echo "▶️  Step 1/2: Creating the Python environment and installing backend..."
+echo "    (This uses 'make install' from the repo root.)"
 echo
 
-# -------------------------------------------------------------
-# Optionally use Makefile if present
-# -------------------------------------------------------------
-if [[ -f "$REPO_ROOT/Makefile" ]] && command -v make >/dev/null 2>&1; then
-  if ask_yes_no "Makefile detected. Use 'make install' to set up everything?" "y"; then
-    echo
-    echo "▶ Running: make install"
-    echo
-    (cd "$REPO_ROOT" && make install)
-    echo
-    echo "✅ Make-based installation complete."
-    USE_MAKE=1
-  else
-    USE_MAKE=0
-  fi
-else
-  USE_MAKE=0
-fi
-
-# -------------------------------------------------------------
-# Manual install (if not using Makefile)
-# -------------------------------------------------------------
-if [[ "$USE_MAKE" -eq 0 ]]; then
-  echo "---------------------------------------------"
-  echo " Manual Python environment setup"
-  echo "---------------------------------------------"
-  echo
-
-  VENV_DIR="$REPO_ROOT/.venv"
-
-  if [[ -d "$VENV_DIR" ]]; then
-    echo "ℹ️ Virtual environment already exists at .venv"
-  else
-    echo "Creating virtual environment at .venv with: $PY_CMD -m venv .venv"
-    $PY_CMD -m venv "$VENV_DIR"
-    echo "✅ Created .venv"
-  fi
-
-  # Figure out venv python path
-  if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* ]]; then
-    VENV_PY="$VENV_DIR/Scripts/python.exe"
-    VENV_PIP="$VENV_DIR/Scripts/pip.exe"
-  else
-    VENV_PY="$VENV_DIR/bin/python"
-    VENV_PIP="$VENV_DIR/bin/pip"
-  fi
-
-  echo
-  echo "Upgrading pip..."
-  "$VENV_PY" -m pip install --upgrade pip
-
-  echo
-  echo "Installing root project (simple-environment) into .venv..."
-  "$VENV_PIP" install -e .
-
-  if [[ -d "$REPO_ROOT/backend/gateway" ]]; then
-    echo
-    echo "Installing VRSecretary backend (backend/gateway) with dev + watsonx extras..."
-    # If extras fail (e.g., no watsonx deps available), fall back gracefully.
-    set +e
-    "$VENV_PIP" install -e "backend/gateway[dev,watsonx]"
-    if [[ $? -ne 0 ]]; then
-      echo "⚠️ Could not install with [dev,watsonx] extras, trying without extras..."
-      "$VENV_PIP" install -e "backend/gateway"
-    fi
-    set -e
-  else
-    echo "⚠️ backend/gateway not found, skipping backend install."
-  fi
-
-  echo
-  echo "✅ Manual environment setup complete."
-fi
-
-# -------------------------------------------------------------
-# Ensure backend .env exists
-# -------------------------------------------------------------
-BACKEND_DIR="$REPO_ROOT/backend/gateway"
-ENV_EXAMPLE="$REPO_ROOT/backend/docker/env.example"
-ENV_FILE="$BACKEND_DIR/.env"
+# 'make install' will:
+#   - Create a virtualenv (.venv) if needed
+#   - Sync dependencies via uv (or pip fallback)
+#   - Install the VRSecretary backend
+#   - Register a Jupyter kernel
+#   - Try to install & start Ollama (best effort)
+make install
 
 echo
-if [[ -d "$BACKEND_DIR" ]]; then
-  if [[ -f "$ENV_FILE" ]]; then
-    echo "ℹ️ backend/gateway/.env already exists."
-  else
-    if [[ -f "$ENV_EXAMPLE" ]]; then
-      echo "Copying env.example to backend/gateway/.env..."
-      cp "$ENV_EXAMPLE" "$ENV_FILE"
-      echo "✅ Created backend/gateway/.env (please review and edit as needed)."
-    else
-      echo "⚠️ backend/docker/env.example not found; you will need to create backend/gateway/.env manually."
-    fi
-  fi
-else
-  echo "⚠️ backend/gateway directory not found; cannot set up .env."
-fi
+echo "✅ Step 1 done! The Python environment and backend are installed."
+echo
 
-# -------------------------------------------------------------
-# Final instructions
-# -------------------------------------------------------------
+echo "▶️  Step 2/2: Applying the Unreal VRSecretary plugin patch (if available)..."
+echo "    (This uses 'make patch-plugin'. If the patch script is missing, it's ok.)"
+echo
+
+make patch-plugin || echo "ℹ️ Plugin patch step skipped (no patch script found or patch failed)."
+
+echo
+echo "==============================================="
+echo "  VRSecretary Demo - Setup Finished            "
+echo "==============================================="
 cat <<'EOF'
 
-=================================================
- ✅ VRSecretary backend environment is ready
-=================================================
+What was done for you:
 
-Next steps:
+  - A Python virtual environment (.venv) was created in the repo.
+  - The VRSecretary backend (FastAPI gateway) was installed into that venv.
+  - A Jupyter kernel "Python 3.11 (VRSecretary)" was registered (optional use).
+  - Ollama was checked/installed (best effort) and tested, if possible.
+  - The VRSecretary Unreal plugin was patched to the latest structure.
 
-1) Start Ollama (LLM server) in a terminal:
+You are now ready to start the demo.
 
-   ollama serve
-   ollama pull llama3
+NEXT STEPS (every time you want to use Ailey):
 
-   Make sure the model name matches OLLAMA_MODEL in backend/gateway/.env.
+  1) Start the AI model (Ollama)
+     -----------------------------
+     Open a terminal and run:
 
-2) Start Chatterbox TTS in another terminal:
+       ollama serve
 
-   chatterbox-server --port 4123
+     Leave that window open.
 
-3) Start the FastAPI gateway in a third terminal:
+  2) Start Chatterbox (voice)
+     ------------------------
+     Open a second terminal and run (adjust path/command if needed):
 
-   # Option A (if Makefile is present):
-   cd /path/to/VRSecretary
-   make run-gateway
+       chatterbox-server --port 4123
 
-   # Option B (manual):
-   cd /path/to/VRSecretary/backend/gateway
-   ../../.venv/bin/python -m uvicorn vrsecretary_gateway.main:app --host 0.0.0.0 --port 8000
+     Again, leave that window open.
 
-4) Test the gateway:
+  3) Start the VRSecretary backend (FastAPI)
+     ---------------------------------------
+     From the root of the repo, you now have two options:
 
-   curl http://localhost:8000/health
+     a) EASY MODE – using make (recommended)
+        ------------------------------------
+        From the repo root (where the Makefile is), run:
 
-5) Open Unreal and load the sample project:
+          make run-gateway
 
-   - VRSecretary/samples/unreal-vr-secretary-demo/VRSecretaryDemo.uproject
-   - Enable the VRSecretary plugin
-   - Configure Project Settings → Plugins → VRSecretary:
-       * Gateway URL: http://localhost:8000
-       * Backend Mode: Gateway (Ollama)
-   - Import / link the avatar as described in examples/README.md
-   - Put on your Quest 3 and start "VR Preview"
+        This will start the FastAPI gateway on:
+          http://0.0.0.0:8000
 
-You should now be able to talk with your VR Secretary (Ailey) in VR 🎧🤖
+     b) MANUAL MODE – using Python directly
+        -----------------------------------
+        If you prefer, you can activate the virtualenv and run uvicorn yourself:
+
+          # On macOS / Linux / Git Bash:
+          source .venv/bin/activate
+
+          # On Windows PowerShell:
+          #   .venv\Scripts\Activate.ps1
+
+          cd backend/gateway
+          uvicorn vrsecretary_gateway.main:app --host 0.0.0.0 --port 8000
+
+  4) Open the Unreal demo project
+     ----------------------------
+       - In File Explorer:
+           VRSecretary/samples/unreal-vr-secretary-demo/
+       - Right-click VRSecretaryDemo.uproject:
+           "Generate Visual Studio project files" (first time only)
+       - Double-click VRSecretaryDemo.uproject to open in Unreal.
+       - In Unreal:
+           * Edit → Plugins → find "VRSecretary" and enable it if needed.
+           * Edit → Project Settings → Plugins → VRSecretary:
+               - Gateway URL:  http://localhost:8000
+               - Backend Mode: Gateway (Ollama)
+               - HTTP Timeout: 60.0 (default)
+
+  5) Put on your VR headset (Quest 3)
+     --------------------------------
+       - Connect via USB or Air Link.
+       - In Unreal, click "VR Preview".
+       - Use the provided controls in the demo to talk to Ailey.
+
+If something does not work, check:
+
+  - That ollama, chatterbox, and the FastAPI backend are all running.
+  - That the Gateway URL is correct in Unreal settings.
+  - The terminal windows for error messages.
+
+You can re-run this install script at any time if you change machines or
+delete the .venv folder.
+
+Enjoy building with Ailey, your VR secretary! 🤖🎧
 
 EOF

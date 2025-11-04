@@ -1,90 +1,57 @@
 # Deployment & Installation Guide
 
-This guide shows you how to set up the **VRSecretary backend** and supporting
-services (Ollama + Chatterbox) using the provided **Makefile**, and how to
-optionally run the backend in Docker.
-
-It assumes you’re in the repository root:
-
-```bash
-cd VRSecretary
-```
+This guide focuses on **deploying** VRSecretary’s backend and Unreal plugin in
+realistic setups, from local development to more production-like environments.
 
 ---
 
-## 1. Requirements
+## 1. Components Recap
 
-- **OS**: Windows 10/11, Linux, or macOS.
-- **Python**: 3.11.x (Makefile will verify).
-- **Unreal Engine**: 5.3+ (for the VR client; not needed for backend-only usage).
-- **Docker** (optional) if you want containerized deployments.
-- **Ollama** installed on the host (Makefile can help install & start it).
-- **Chatterbox TTS** installed on the host (or another machine).
+VRSecretary consists of:
+
+- **Unreal plugin** (`engine-plugins/unreal/VRSecretary/`)
+  - Built into your game project and distributed with it.
+- **FastAPI gateway** (`backend/gateway/`)
+  - Python service handling `/api/vr_chat` and LLM/TTS.
+- **LLM provider(s)**
+  - Local: **Ollama** (via OpenAI-style Chat Completions).
+  - Cloud: **IBM watsonx.ai**.
+- **TTS provider**
+  - **Chatterbox TTS**.
+
+Additionally, you may use:
+
+- **Llama-Unreal plugin** for the `LocalLlamaCpp` mode (fully in-engine models).
+- Docker / Docker Compose for containerized deployments.
 
 ---
 
-## 2. Quick Start Using the Makefile
+## 2. Local Development Setup
 
-The root `Makefile` provides convenient targets for setup and development.
-
-### 2.1 Install Everything (Environment + Backend + Ollama)
-
-From the repo root:
+### 2.1 Backend (Python venv)
 
 ```bash
-make install
+cd backend/gateway
+python -m venv .venv
+# Windows
+.venv\Scripts\Activate.ps1
+# macOS / Linux
+# source .venv/bin/activate
+
+pip install -e .
+# Optional watsonx extras:
+# pip install -e ".[watsonx]"
 ```
 
-This will:
-
-1. Create a Python 3.11 virtual environment in `.venv` (if it doesn’t exist).
-2. Install the root `simple-environment` (Jupyter + Ollama Python client) via `pyproject.toml`.
-3. Install the VRSecretary backend (`backend/gateway`) into the same `.venv`.
-4. Register a Jupyter kernel named **"Python 3.11 (VRSecretary)"**.
-5. Attempt to install **Ollama** on the host (if missing).
-6. Attempt to start the **Ollama server** and verify it is reachable at `http://localhost:11434`.
-
-> If Ollama installation fails, install it manually from <https://ollama.com/download>.
-
-### 2.2 Start the Backend Gateway
-
-Once `make install` completes successfully, run:
+Copy environment variables template:
 
 ```bash
-make run-gateway
+cd ../docker
+cp env.example ../gateway/.env
+cd ../gateway
 ```
 
-This will:
-
-- Use `.venv`'s Python interpreter.
-- Run `uvicorn vrsecretary_gateway.main:app` on `http://0.0.0.0:8000`.
-
-Check that it’s working:
-
-```bash
-curl http://localhost:8000/health
-```
-
-Expected response:
-
-```json
-{
-  "status": "ok",
-  "mode": "offline_local_ollama",
-  "timestamp": "..."
-}
-```
-
-### 2.3 Configure `.env` for the Backend
-
-The backend reads its settings from environment variables via `pydantic-settings`.
-To set them conveniently, use the example file:
-
-```bash
-cp backend/docker/env.example backend/gateway/.env
-```
-
-Then edit `backend/gateway/.env`:
+Edit `.env` to match your setup. For local Ollama + Chatterbox:
 
 ```env
 MODE=offline_local_ollama
@@ -93,174 +60,228 @@ OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3
 
 CHATTERBOX_URL=http://localhost:4123
-
-# Optional watsonx.ai settings if using MODE=online_watsonx
-# WATSONX_URL=...
-# WATSONX_PROJECT_ID=...
-# WATSONX_MODEL_ID=...
-# WATSONX_API_KEY=...
+SESSION_MAX_HISTORY=10
 ```
 
-Restart the gateway if you change `.env`.
-
----
-
-## 3. Running Supporting Services
-
-### 3.1 Ollama (LLM)
-
-You can let the Makefile handle it via:
+Run the gateway:
 
 ```bash
-make ensure-ollama-running
+uvicorn vrsecretary_gateway.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Or do it manually:
+Check:
+
+- <http://localhost:8000/health>
+- <http://localhost:8000/docs>
+
+### 2.2 Ollama (local LLM)
+
+Install from <https://ollama.ai/> and run:
 
 ```bash
-# Start server
 ollama serve
-
-# In another terminal, pull a model
 ollama pull llama3
 ```
 
-Confirm the API is up:
+Confirm models:
 
 ```bash
-curl http://localhost:11434/api/tags
+curl http://localhost:11434/v1/models
 ```
 
-### 3.2 Chatterbox TTS
+### 2.3 Chatterbox (TTS)
 
-Install Chatterbox according to its README, then run:
+Install per its README and run:
 
 ```bash
 chatterbox-server --port 4123
 ```
 
-Quick test:
+Sanity check:
 
 ```bash
-curl -X POST http://localhost:4123/v1/audio/speech           -H "Content-Type: application/json"           -d '{ "input": "Hello from Ailey.", "temperature": 0.6, "cfg_weight": 0.5, "exaggeration": 0.35 }'           --output test.wav
+curl -X POST http://localhost:4123/v1/audio/speech   -H "Content-Type: application/json"   -d '{"input": "Hello from Ailey.", "temperature": 0.6, "cfg_weight": 0.5, "exaggeration": 0.35}'   --output test.wav
 ```
 
-Play `test.wav` to ensure audio is correct.
+Play `test.wav` to verify audio.
+
+### 2.4 Unreal Project
+
+1. Copy the plugin into your project’s `Plugins/` folder.
+2. Run the patch script once (from repo root):
+
+   ```bash
+   chmod +x tools/scripts/apply_vrsecretary_patch.sh
+   ./tools/scripts/apply_vrsecretary_patch.sh
+   ```
+
+3. Generate project files, build, and open in Unreal.
+4. Configure **Project Settings → Plugins → VRSecretary**:
+   - `Gateway URL` = `http://localhost:8000`
+   - `Backend Mode` = `Gateway (Ollama)` (or `Gateway (watsonx.ai)`)
+   - `HTTP Timeout` = e.g. `60.0`
 
 ---
 
-## 4. Docker-Based Backend Deployment
+## 3. Docker-Based Development
 
-There are two Docker-related flows:
+A Docker Compose file is provided under `backend/docker/docker-compose.dev.yml`
+for local experiments.
 
-1. **Dev container for Jupyter + Ollama** (root Dockerfile + Make targets).
-2. **Backend + Ollama stack** via `docker-compose.dev.yml`.
-
-### 4.1 Dev Container (Jupyter + Ollama + simple-environment)
-
-From the repo root:
+From repo root:
 
 ```bash
-make build-container
-make run-container
+cd backend/docker
+docker-compose -f docker-compose.dev.yml up --build
 ```
 
-This uses the root **Dockerfile** to build an image `simple-env:latest` which contains:
+Depending on the configuration, this can:
 
-- Ollama server.
-- Python 3.11 virtualenv.
-- `simple-environment` installed (Jupyter + Ollama Python client).
+- Build and run the FastAPI gateway in a container.
+- Start a local Ollama container.
+- Expect Chatterbox on the host (using `host.docker.internal` on supported OSes).
 
-After running `make run-container`, you should have:
-
-- Jupyter at `http://localhost:8888`.
-- Ollama at `http://localhost:11434` (inside the container).
-
-Logs:
-
-```bash
-make logs
-```
-
-Stop & remove the container:
-
-```bash
-make stop-container
-make remove-container
-```
-
-### 4.2 Backend Dev Stack (Gateway + Ollama via docker-compose)
-
-Under `backend/docker`, there is a `docker-compose.dev.yml` which starts:
-
-- `ollama` service.
-- `gateway` service (FastAPI).
-
-Use the Makefile helpers:
-
-```bash
-# From repo root
-make docker-dev-up      # starts gateway + Ollama
-make docker-dev-logs    # tail logs
-make docker-dev-down    # stop and remove
-```
-
-By default, it maps:
-
-- `gateway` → `http://localhost:8000`
-- `ollama`  → `http://localhost:11434` (inside compose)
-
-In this configuration, you likely want `CHATTERBOX_URL=http://host.docker.internal:4123`
-so that gateway can reach a Chatterbox instance running on the host.
+Adjust `env.example` and `docker-compose.dev.yml` to your needs (ports, GPU
+access, etc.).
 
 ---
 
-## 5. Testing the Backend API
+## 4. Example Production-Like Setup
 
-With backend + Ollama + Chatterbox running (either locally or in Docker):
+A realistic deployment may look like this:
+
+```text
++-----------------------------+
+|        Client Devices       |
+| (VR headsets / PC clients)  |
++--------------+--------------+
+               |
+               | HTTPS (reverse proxy)
+               v
++-----------------------------+
+|    API Gateway / Ingress    |
++-----------------------------+
+               |
+               v
++-----------------------------+
+|   VRSecretary FastAPI App   |
+|   (gunicorn/uvicorn, etc.)  |
++-----------------------------+
+        |                 |
+        | HTTP            | HTTPS / Private API
+        v                 v
++---------------+   +--------------------+
+|    Ollama     |   |    watsonx.ai      |
+| (OpenAI API)  |   | (cloud provider)   |
++---------------+   +--------------------+
+        |
+        | HTTP
+        v
++-----------------+
+|  Chatterbox TTS |
++-----------------+
+```
+
+### 4.1 Process Layout
+
+- **FastAPI gateway** behind a reverse proxy (NGINX, Caddy, etc.) with HTTPS.
+- **Ollama** running on a GPU-capable host with the necessary models pulled.
+- **Chatterbox** on the same host as the gateway, or a nearby machine with
+  GPU resources.
+- Optional: **watsonx.ai** for cloud LLMs (only outbound HTTPS needed).
+
+### 4.2 Configuration Tips
+
+- Use environment variables or `docker-compose` overrides to switch between
+  `MODE=offline_local_ollama` and `MODE=online_watsonx` without changing code.
+- For production, consider:
+  - Setting stricter timeouts and error handling.
+  - Using a process manager (systemd, Supervisor) or an orchestrator (Kubernetes).
+  - Configuring HTTPS at the ingress level and keeping internal traffic on
+    a private network.
+
+### 4.3 Scaling Considerations
+
+- **Gateway scaling**: The FastAPI gateway is stateless except for in-memory
+  session history. You can:
+  - Keep sessions sticky to a particular instance, or
+  - Move session state to a shared store (Redis, database) if you run multiple replicas.
+
+- **LLM throughput**:
+  - Ollama’s throughput depends heavily on GPU and model size.
+  - For multi-user VR experiences, load-test using the provided k6 script and
+    adjust model / hardware accordingly.
+
+- **TTS latency**:
+  - TTS is often the latency bottleneck.
+  - Consider caching repeated phrases, using fast voices, or pre-generating
+    common prompts where appropriate.
+
+---
+
+## 5. Unreal Plugin Distribution
+
+When you build and ship your Unreal project:
+
+- The `VRSecretary` plugin code is compiled into your packaged game.
+- Any **Llama-Unreal** plugin and its models (for LocalLlamaCpp) must be included
+  as part of your packaging strategy if you use that mode.
+
+The **FastAPI gateway, Ollama, and Chatterbox** are **not** packaged into the
+Unreal game; they are external services. You can:
+
+- Host them on the same machine as the game (single-user setups).
+- Host them on a local network server (LAN/enterprise).
+- Host them in the cloud, accessible over HTTPS.
+
+Your game’s config (e.g. `GatewayUrl`) should be set appropriately for each
+target environment.
+
+---
+
+## 6. Testing & Monitoring
+
+### 6.1 Backend Tests
+
+From `backend/gateway`:
 
 ```bash
-curl -X POST http://localhost:8000/api/vr_chat           -H "Content-Type: application/json"           -d '{
-    "session_id": "test-session-1",
-    "user_text": "Hello Ailey, who are you?"
-  }'
+pytest
+# or
+pytest --cov=vrsecretary_gateway --cov-report=html
 ```
 
-You should see a JSON response similar to:
+### 6.2 Load Testing
 
-```json
-{
-  "assistant_text": "Hi! I'm Ailey, your VR secretary. I'm here to help with planning and tasks...",
-  "audio_wav_base64": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YcQAAA..."
-}
+From `tools/perf`:
+
+```bash
+k6 run load_test_vr_chat.k6.js
 ```
 
-If this works, Unreal (or any client) can consume the same endpoint.
+This script hits `/api/vr_chat` with configurable concurrency and lets you
+evaluate latency and throughput.
+
+### 6.3 Logging & Tracing
+
+- Configure FastAPI / Uvicorn logging to log requests, LLM and TTS timings.
+- Consider adding request IDs to correlate logs with user sessions.
+- Instrument with Prometheus / OpenTelemetry if needed.
 
 ---
 
-## 6. Unreal Configuration
+## 7. Security Notes
 
-Once the backend is running, configure Unreal as follows:
-
-1. In UE5, open your VR project (sample or custom).
-2. Go to **Edit → Project Settings → Plugins → VRSecretary**.
-3. Set:
-   - **Gateway URL** = `http://localhost:8000`
-   - **Backend Mode** = `Gateway (Ollama)` or `Gateway (Watsonx)`
-4. Ensure any Blueprint that uses `UVRSecretaryComponent` forwards the `OnAssistantResponse`
-   into your avatar’s subtitle widget and audio playback logic.
-
-For step-by-step Unreal integration details, see `unreal-integration.md`.
+- Treat any API keys (e.g. watsonx) as secrets. Do not hard-code them in code
+  or push them to version control.
+- Use HTTPS for external traffic (VR clients to gateway, gateway to cloud LLMs).
+- If you expose `/api/vr_chat` on the public internet, consider:
+  - Authentication (tokens, API keys, or OAuth2).
+  - Rate limiting per IP / client.
+  - Input validation and output filtering to prevent abuse.
 
 ---
 
-## 7. Production Tips
-
-- Use a **reverse proxy** (nginx, Traefik, API gateway) in front of FastAPI.
-- Terminate TLS at the proxy and forward requests to the gateway.
-- Run multiple instances of the gateway (uvicorn workers or separate containers).
-- Externalize logging and monitoring.
-- Consider secrets management for API keys (e.g., watsonx.ai).
-
-VRSecretary is meant to be a solid starting point. Adapt and harden it according to your own production requirements.
+With these patterns, you can run VRSecretary anywhere from a single dev
+machine to a small production cluster, while keeping the Unreal integration
+simple and stable.

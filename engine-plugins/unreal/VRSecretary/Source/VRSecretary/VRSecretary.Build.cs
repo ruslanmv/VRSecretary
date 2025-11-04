@@ -14,19 +14,21 @@ public class VRSecretary : ModuleRules
                 "Engine",
                 "HTTP",
                 "Json",
-                "JsonUtilities"
+                "JsonUtilities",
+                "LlamaCore"
             }
         );
 
         PrivateDependencyModuleNames.AddRange(
             new string[]
             {
-                "Projects"
+                "Projects",
+                "DeveloperSettings"
             }
         );
 
-        // NOTE:
-        // If you wire in llama.cpp as a static third-party library, add it here, e.g.:
+        // If you wire in llama.cpp directly as a static third-party library instead of
+        // using the Llama-Unreal plugin, you can add includes / libs here, e.g.:
         //
         // PublicIncludePaths.Add("ThirdParty/LlamaCpp/Include");
         // PublicAdditionalLibraries.Add("ThirdParty/LlamaCpp/Lib/Win64/llama.lib");

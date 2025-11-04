@@ -1,166 +1,284 @@
 # VRSecretary Architecture
 
-This document dives into the **high-level architecture** of VRSecretary and how the pieces connect.
+This document describes the **internal architecture** of VRSecretary and how the
+different services and plugins interact. It is meant to complement the high-level
+overview in `overview.md`.
 
-## Overview Diagram
+---
+
+## 1. Top-Level Diagram
 
 ```text
-┌────────────────────────────────────────────────────────────┐
-│                    Unreal Engine 5 (VR)                    │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  BP_VRSecretaryManager                              │  │
-│  │  - Handles user input (VR controllers / UI)         │  │
-│  │  - Owns UVRSecretaryComponent                       │  │
-│  │  - Manages session state / avatar link              │  │
-│  └────────────┬───────────────────────────────────────┘  │
-│               │                                           │
-│  ┌────────────▼───────────────────────────────────────┐  │
-│  │  UVRSecretaryComponent (C++ ActorComponent)        │  │
-│  │  - SendUserText(UserText, Config)                  │  │
-│  │  - OnAssistantResponse(AssistantText, AudioBase64) │  │
-│  │  - OnError(ErrorMessage)                           │  │
-│  └────────────┬───────────────────────────────────────┘  │
-│               │   HTTP POST /api/vr_chat                  │
-└───────────────▼───────────────────────────────────────────┘
-                │  JSON: {session_id, user_text}
-                │
-┌───────────────▼───────────────────────────────────────────┐
-│              FastAPI Gateway Backend (Python)             │
-│  ┌──────────────────────────────────────────────────────┐ │
-│  │  /health                                            │ │
-│  │  /api/vr_chat                                       │ │
-│  │    - Validate VRChatRequest                         │ │
-│  │    - Load/save session history (optional)           │ │
-│  │    - Build chat messages (system + user + history)  │ │
-│  │    - Call LLM client (Ollama / watsonx.ai)          │ │
-│  │    - Call Chatterbox TTS for audio                  │ │
-│  │    - Return VRChatResponse                          │ │
-│  └────────────┬────────────────────────────────────────┘ │
-│               │                                           │
-│  ┌────────────▼────────────────────────────────────────┐ │
-│  │   LLM Client Abstraction                            │ │
-│  │   - BaseLLMClient                                   │ │
-│  │   - OllamaClient (offline_local_ollama)             │ │
-│  │   - WatsonxClient (online_watsonx)                  │ │
-│  └────────────┬────────────────────────────────────────┘ │
-│               │                                           │
-│  ┌────────────▼────────────────────────────────────────┐ │
-│  │   Chatterbox TTS Client                             │ │
-│  │   - /v1/audio/speech → WAV audio                    │ │
-│  └─────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────┘
+                    +-------------------------------+
+                    |         Unreal Engine         |
+                    |         (VR Front-end)        |
+                    |                               |
+                    |  +-------------------------+  |
+User in VR  <-----> |  | VRSecretaryComponent    |  |
+(controllers, mic)  |  |                         |  |
+                    |  +-------------------------+  |
+                    |        ^           ^          |
+                    |        |           |          |
+                    +--------|-----------|----------+
+                             |           |
+            Gateway / Direct |           | LocalLlamaCpp
+             (HTTP)          |           | (in-process)
+                             |           |
+                  +----------v-----------v---------+
+                  |         Backends               |
+                  |                                |
+                  |  +--------------------------+  |
+                  |  | FastAPI Gateway          |  |
+                  |  |  - /api/vr_chat          |  |
+                  |  |  - LLM clients           |  |
+                  |  |  - TTS client            |  |
+                  |  +--------------------------+  |
+                  |                |               |
+                  |                | LLM calls     |
+                  |                v               |
+                  |   +------------------------+   |
+                  |   |  LLM Providers         |   |
+                  |   |  - Ollama (OpenAI)     |   |
+                  |   |  - IBM watsonx.ai      |   |
+                  |   +------------------------+   |
+                  |                |               |
+                  |                | TTS calls     |
+                  |                v               |
+                  |   +------------------------+   |
+                  |   |  TTS Provider          |   |
+                  |   |  - Chatterbox          |   |
+                  |   +------------------------+   |
+                  +--------------------------------+
 ```
 
-## Modules & Responsibilities
+In addition, the **Llama-Unreal** plugin provides an in-engine llama.cpp backend,
+which VRSecretary uses for the `LocalLlamaCpp` mode.
 
-### 1. Unreal Plugin (`engine-plugins/unreal/VRSecretary`)
+---
 
-**Key classes:**
+## 2. Unreal Engine Layer
 
-- `UVRSecretaryComponent` (C++ ActorComponent)
-  - Blueprint spawnable; attach to a manager or avatar.
-  - Exposes:
-    - `SendUserText(const FString& UserText, const FVRSecretaryChatConfig& Config)`.
-    - `OnAssistantResponse` (Blueprint multicast delegate: text + audio base64).
-    - `OnError` (Blueprint delegate).
-  - Implements backend modes:
-    - Gateway (Ollama / watsonx.ai) → `/api/vr_chat` on the FastAPI backend.
-    - Direct Ollama mode → `http://localhost:11434/v1/chat/completions` (text only).
-    - Local Llama.cpp stub → placeholder to wire a direct llama.cpp integration.
+### 2.1 VRSecretaryComponent
 
-- `UVRSecretarySettings` (Developer Settings)
-  - Configurable in **Project Settings → Plugins → VRSecretary**.
-  - Holds:
-    - `GatewayUrl` (e.g., `http://localhost:8000`).
-    - `BackendMode` (enum).
-    - HTTP timeout.
-    - `DirectOllamaUrl`, `DirectOllamaModel` for direct mode.
+The `UVRSecretaryComponent` is the main integration point between Unreal and the
+AI backends.
 
-- `EVRSecretaryBackendMode`
-  - `GatewayOllama`
-  - `GatewayWatsonx`
-  - `DirectOllama`
-  - `LocalLlamaCpp` (stub).
+**Responsibilities:**
 
-### 2. Backend Gateway (`backend/gateway/vrsecretary_gateway`)
+- Provide a Blueprint/C++ function to send the user’s message:
 
-**Main files:**
+  ```cpp
+  void SendUserText(const FString& UserText, const FVRSecretaryChatConfig& Config);
+  void SendUserTextWithDefaultConfig(const FString& UserText);
+  ```
 
-- `main.py`
-  - Creates FastAPI `app`.
-  - Mounts routers:
-    - `/health` (health check).
-    - `/api/vr_chat` (main LLM + TTS endpoint).
-  - Adds CORS middleware.
+- Resolve the effective backend mode:
 
-- `config.py`
-  - Uses `pydantic-settings` to load configuration from `.env` / environment:
-    - `MODE` – `offline_local_ollama` or `online_watsonx`.
-    - `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, timeouts.
-    - `CHATTERBOX_URL`, timeouts.
-    - `WATSONX_*` credentials, if used.
+  - Global default from `UVRSecretarySettings`
+  - Optional per-component override
 
-- `api/`:
-  - `health_router.py` – `/health` returns `{status, mode, timestamp}`.
-  - `vr_chat_router.py` – `/api/vr_chat` endpoint, containing:
-    - The **Ailey** system prompt.
-    - Request model: `VRChatRequest` with `session_id`, `user_text`.
-    - Response model: `VRChatResponse` with `assistant_text`, `audio_wav_base64`.
-    - LLM + TTS orchestration logic.
+- Dispatch to one of three internal paths:
 
-- `models/`:
-  - `chat_schemas.py` – `ChatMessage`, `VRChatRequest`, `VRChatResponse` Pydantic models.
-  - `session_store.py` – simple in-memory session history (can be replaced with Redis in production).
+  - `SendViaGateway(...)` – Gateway (Ollama / watsonx)
+  - `SendViaDirectOllama(...)` – Direct OpenAI-style `/v1/chat/completions`
+  - `SendViaLocalLlamaCpp(...)` – Local llama.cpp via `ULlamaComponent`
 
-- `llm/`:
-  - `base_client.py` – `BaseLLMClient` (abstract) and `get_llm_client()` factory.
-  - `ollama_client.py` – uses `httpx` to call Ollama’s `/v1/chat/completions` (OpenAI-compatible).
-  - `watsonx_client.py` – uses IBM Watsonx SDK to call hosted models.
+- Raise events back to Blueprint:
 
-- `tts/`:
-  - `chatterbox_client.py` – `synthesize_with_chatterbox(text)` calling `/v1/audio/speech`.
+  - `OnAssistantResponse(AssistantText, AudioBase64)`
+  - `OnError(ErrorMessage)`
 
-### 3. External Services
+**Not responsible for:**
 
-- **Ollama**:
-  - Runs on host or in Docker (`ollama/ollama` image).
-  - Exposes `http://localhost:11434` (or `http://ollama:11434` in Docker compose).
-  - Models must be pulled beforehand (`ollama pull llama3`).
+- Rendering avatars or UI
+- Low-level HTTP configuration beyond basic timeout and URL
+- Persona or long-term memory shaping (handled by backend or Llama-Unreal)
 
-- **IBM watsonx.ai**:
-  - Cloud LLM platform.
-  - Requires API key, URL, project ID, model ID.
-  - Only used when `MODE=online_watsonx`.
+### 2.2 VRSecretarySettings (Developer Settings)
 
-- **Chatterbox TTS**:
-  - Self-hosted TTS server.
-  - Exposes `http://localhost:4123/v1/audio/speech` by default.
-  - Configured via `CHATTERBOX_URL` in `.env` or Docker env.
+`UVRSecretarySettings` is responsible for global plugin configuration:
 
-## Data Flow Example
+- `GatewayUrl` – base URL of FastAPI gateway (e.g. `http://localhost:8000`).
+- `BackendMode` – default backend mode for all components.
+- `HttpTimeout` – global HTTP timeout in seconds.
+- `DirectOllamaUrl` – base URL for OpenAI-style endpoint (e.g. `http://localhost:11434`).
+- `DirectOllamaModel` – default model name for DirectOllama.
 
-1. Unreal calls `SendUserText("Schedule a meeting for tomorrow at 3pm", Config)`.
-2. Plugin builds JSON `{session_id, user_text}` and POSTs to `/api/vr_chat`.
-3. Backend constructs a list of `ChatMessage` objects:
-   - System message (Ailey’s persona prompt).
-   - (Optional) previous history for the session.
-   - User message.
-4. `get_llm_client()` returns an `OllamaClient` or `WatsonxClient` based on `MODE`.
-5. LLM returns an assistant reply.
-6. TTS client calls Chatterbox to produce WAV audio bytes.
-7. Backend base64-encodes the WAV and returns:
-   - `assistant_text`
-   - `audio_wav_base64`
-8. Unreal Blueprint receives `OnAssistantResponse`:
-   - Updates subtitles on the avatar.
-   - Decodes/plays audio on an `AudioComponent`.
+These settings are stored in `DefaultGame.ini` and editable in
+**Project Settings → Plugins → VRSecretary**.
 
-## Scaling & Production Considerations
+### 2.3 Llama-Unreal Integration (LocalLlamaCpp)
 
-- Replace in-memory `session_store` with Redis or a database.
-- Add authentication/JWT to the backend if exposed over the internet.
-- Use gunicorn/uvicorn workers behind a reverse proxy (nginx, Traefik).
-- Consider streaming responses (server-sent events / WebSockets) for long replies.
-- Implement rate limiting per user/session/IP.
+When `BackendMode == LocalLlamaCpp` (or the component override says so):
 
-For the concrete HTTP API specification (routes, payloads, error formats), see `engine-agnostic-api.md`.
+- `SendViaLocalLlamaCpp(...)` looks for a `ULlamaComponent`:
+  - Uses the explicit `LlamaComponent` pointer (if assigned), else
+  - Searches the owning Actor (`GetOwner()->FindComponentByClass<ULlamaComponent>()`).
+
+- It binds to `OnResponseGenerated` on the `ULlamaComponent` and sends a `FLlamaChatPrompt`.
+
+- Once a response is generated, `HandleLlamaResponse(...)` is invoked and the text is
+  forwarded to Blueprint via `OnAssistantResponse(AssistantText, "")`.
+
+This design keeps VRSecretary’s llama-specific logic minimal and delegates the details
+(loading models, templates, embeddings, vector DB, etc.) to the Llama-Unreal plugin.
+
+---
+
+## 3. FastAPI Gateway Layer
+
+The gateway lives under `backend/gateway/vrsecretary_gateway`. Its main job is
+to expose a stable, engine-agnostic API while hiding provider-specific details.
+
+### 3.1 API: /health
+
+```http
+GET /health
+```
+
+**Use:** Simple health check for monitoring / startup.
+
+**Response:**
+
+```json
+{"status": "ok"}
+```
+
+### 3.2 API: /api/vr_chat
+
+```http
+POST /api/vr_chat
+Content-Type: application/json
+```
+
+**Request body:**
+
+```json
+{
+  "session_id": "string",
+  "user_text": "string"
+}
+```
+
+- `session_id` – opaque identifier provided by the client, used to look up
+  past messages for conversational continuity.
+- `user_text` – what the user just said / typed in the VR experience.
+
+**Processing steps:**
+
+1. Validate body using Pydantic model (`VRChatRequest`).
+2. Retrieve or create a chat session for `session_id` in `session_store`.
+3. Build a list of messages (in OpenAI chat format):
+
+   - `system` message – Ailey’s persona prompt (from `persona-ailey.md`).
+   - `assistant` / `user` turns – prior conversation from the session.
+   - `user` – the new `user_text`.
+
+4. Choose an LLM client based on settings:
+
+   - `OllamaClient` if `MODE=offline_local_ollama`
+   - `WatsonxClient` if `MODE=online_watsonx`
+
+5. Call the LLM client with the messages, obtain an `assistant` reply string.
+
+6. Call `ChatterboxClient` with that reply to synthesize WAV audio.
+
+7. Save the new assistant message into the session history.
+
+8. Return a `VRChatResponse`:
+
+   ```json
+   {
+     "assistant_text": "string",
+     "audio_wav_base64": "string"
+   }
+   ```
+
+   - `assistant_text` – plain text for subtitles / logs.
+   - `audio_wav_base64` – WAV bytes in base64 for playback.
+
+### 3.3 LLM Clients
+
+**OllamaClient**
+
+- Talks to an OpenAI-compatible `/v1/chat/completions` endpoint.
+- Request body includes:
+  - `model`
+  - `messages`
+  - generation parameters (temperature, max tokens, etc.).
+- Used by the gateway and by any engine that chooses the same protocol.
+
+**WatsonxClient**
+
+- Wraps IBM watsonx.ai APIs.
+- Responsible for:
+  - Authentication via API key / IAM.
+  - Translating OpenAI-style messages into watsonx’s format.
+  - Handling parameters like max tokens, temperature.
+
+### 3.4 TTS Client (Chatterbox)
+
+**ChatterboxClient** encapsulates calls to Chatterbox TTS:
+
+- `POST /v1/audio/speech`
+- Inputs:
+  - `input` (text)
+  - Optional tuning parameters (temperature, cfg_weight, exaggeration, etc.).
+- Outputs:
+  - WAV bytes
+
+The gateway base64-encodes the WAV bytes before returning to the engine.
+
+---
+
+## 4. Data Flow Examples
+
+### 4.1 Gateway (Ollama) Mode
+
+1. User speaks / types in VR.
+2. `VRSecretaryComponent.SendUserText(...)` is called with backend mode = GatewayOllama.
+3. Plugin sends `POST /api/vr_chat` to the gateway.
+4. Gateway calls `OllamaClient` → local LLM → Chatterbox.
+5. Gateway responds with text + audio.
+6. Plugin fires `OnAssistantResponse`.
+7. Blueprint updates subtitles and plays audio near the avatar.
+
+### 4.2 DirectOllama Mode
+
+1. User speaks / types in VR.
+2. `VRSecretaryComponent.SendUserText(...)` backend mode = DirectOllama.
+3. Plugin sends `POST {DirectOllamaUrl}/v1/chat/completions`.
+4. OpenAI-style server returns `choices[0].message.content`.
+5. Plugin fires `OnAssistantResponse(AssistantText, "")`.
+6. Blueprint uses text only (no audio) or calls a separate TTS service if desired.
+
+### 4.3 LocalLlamaCpp Mode
+
+1. User speaks / types in VR.
+2. `VRSecretaryComponent.SendUserText(...)` backend mode = LocalLlamaCpp.
+3. Plugin sends a prompt to `ULlamaComponent` via `InsertTemplatedPromptStruct`.
+4. Llama-Unreal runs llama.cpp locally and streams / aggregates tokens into a full reply.
+5. Llama-Unreal fires `OnResponseGenerated` with the final text.
+6. Plugin forwards it to Blueprint via `OnAssistantResponse(AssistantText, "")`.
+
+---
+
+## 5. Extensibility
+
+You can extend the architecture in a number of ways:
+
+- **New LLM providers**: Add a new client implementing the same interface as `OllamaClient`
+  and `WatsonxClient`, then add a new gateway mode and Unreal backend mode.
+- **RAG (Retrieval-Augmented Generation)**: Enhance the gateway with vector search over
+  documents, injecting relevant context into the messages.
+- **Tools / function calling**: Allow the LLM to schedule calendar events, send emails, etc.,
+  by adding a tool layer in the gateway.
+- **Additional TTS engines**: Add more TTS clients and let Ailey switch voices at runtime.
+
+The separation between Unreal, gateway, LLM providers, and TTS makes these changes mostly
+localized to one layer at a time.
+
+---
+
+For API details and payload shapes, see `engine-agnostic-api.md`. For Unreal
+integration steps and blueprints, see `unreal-integration.md`.
