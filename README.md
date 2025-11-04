@@ -7,6 +7,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-green.svg)](https://www.python.org/)
 
 ---
+![](assets/2025-11-04-12-18-56.png)
 
 ## ✨ What Is VRSecretary?
 
