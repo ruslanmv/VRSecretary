@@ -9,7 +9,7 @@ description = "Minimal environment for Jupyter Notebook (Python 3.11) with Ollam
 requires-python = ">=3.11,<3.13"
 
 authors = [
-  { name = "VRSecretary Contributors" }
+  { name = "Ruslan Magana Vsevolodovna" }
 ]
 
 license = { text = "Apache-2.0" }
@@ -29,6 +29,7 @@ dependencies = [
   "notebook>=7.2",                              # modern Notebook
   "ipykernel>=6.29",
   "ollama>=0.6,<1.0",                           # pin to a stable client range
+  "chatterbox-tts>=0.1.4",
 ]
 
 [project.optional-dependencies]
@@ -59,3 +60,7 @@ ignore = ["E501"]
 testpaths = ["backend/gateway/tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
+
+# ----------------- ADD THIS SECTION -----------------
+[tool.uv.extra-build-dependencies]
+pkuseg = ["numpy"]

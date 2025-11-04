@@ -186,11 +186,19 @@ pip-install: venv check-pyproject ## [pip] Install root project (simple-environm
 
 uv-install: check-pyproject venv check-uv ## [uv] Create/sync deps INTO .venv from root pyproject.toml
 ifeq ($(OS),Windows_NT)
+
+uv-install: check-pyproject venv check-uv check-vsb ## [uv] Create/sync deps INTO .venv from root pyproject.toml
 	@echo "Syncing environment with uv into $(VENV)..."
-	@$$env:UV_PROJECT_ENVIRONMENT = '$(VENV)'; uv sync
+	@& "scripts/windows/install_vsb_win.ps1"
+	@$$env:UV_PROJECT_ENVIRONMENT = '$(VENV)'; uv sync --preview-features extra-build-dependencies
 	@echo "[OK] Done. To activate the environment, run:"
 	@echo "   .\\$(VENV)\\Scripts\\Activate.ps1"
+
+check-vsb: ## Install Microsoft Visual C++ Build Tools (if needed)
+	@& "scripts/windows/install_vsb_win.ps1"
 else
+
+uv-install: check-pyproject venv check-uv ## [uv] Create/sync deps INTO .venv from root pyproject.toml
 	@echo "Syncing environment with uv into $(VENV)..."
 	@UV_BIN=$$(command -v uv 2>$(NULL_DEVICE) || true); \
 	if [ -z "$$UV_BIN" ] && [ -x "$$HOME/.local/bin/uv" ]; then \
@@ -202,7 +210,9 @@ else
 	fi; \
 	UV_PROJECT_ENVIRONMENT=$(VENV) "$$UV_BIN" sync
 	@printf '%s\n' "Done. To activate the environment, run:" "   source $(VENV)/bin/activate"
+
 endif
+
 
 update: check-pyproject ## Upgrade/sync dependencies (prefers uv if available), plus dev extras for backend
 ifeq ($(OS),Windows_NT)
