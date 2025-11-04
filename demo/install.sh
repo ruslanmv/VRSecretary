@@ -4,15 +4,16 @@
 #
 # Friendly helper script for the VRSecretary demo.
 #
-# This script now uses the top-level Makefile to do most of the work for you:
+# This script uses the top-level Makefile to do most of the work for you:
 #
 #   - Creates a Python virtual environment
 #   - Installs all Python dependencies (root + VRSecretary backend)
 #   - Installs & checks Ollama (best effort)
 #   - Registers a Jupyter kernel (optional, for notebooks)
 #
-# It is meant for **non-technical** users. Just run it from Git Bash or a Unix
-# terminal and follow the messages on screen.
+# It is meant for **non-technical** users. Just run it from:
+#   - macOS / Linux: any bash-capable terminal
+#   - Windows: Git Bash (installed with Git for Windows)
 #
 # Requirements (installed once):
 #   - Git (for Git Bash on Windows)
