@@ -23,7 +23,8 @@ It ships with:
 - A **VR secretary avatar** (Scifi Girl v.01 – non-commercial demo, GLB ready to import).
 - An **Unreal plugin** (`VRSecretary`) exposing a simple Blueprint-friendly component.
 - A **gateway backend** that exposes a clean `/api/vr_chat` HTTP endpoint.
-- A **direct Ollama mode** (Unreal → Ollama, no Python), plus a **llama.cpp stub** for in-engine integration later.
+- A **Direct Ollama mode** (OpenAI-style `/v1/chat/completions`, text-only via HTTP).
+- A **Local Llama.cpp mode** implemented via the **Llama-Unreal** plugin for fully in-engine models.
 - Documentation to extend the same API to other engines (e.g., Unity).
 
 ---
@@ -35,8 +36,10 @@ It ships with:
   - Uses a 3D avatar, audio, and subtitles for an immersive conversational assistant.
 
 - **Flexible LLM Backends**
-  - **Offline (default):** [Ollama](https://ollama.ai/) on your machine (e.g. `llama3`, Granite, Mistral).
-  - **Online (optional):** [IBM watsonx.ai](https://www.ibm.com/watsonx) via official SDK/API.
+  - **Offline (default):** [Ollama](https://ollama.ai/) on your machine (e.g. `llama3`, Granite, Mistral) via either:
+    - The **FastAPI gateway** (`GatewayOllama` mode), or
+    - A **direct OpenAI-style HTTP endpoint** (`DirectOllama` mode).
+  - **Online (optional):** [IBM watsonx.ai](https://www.ibm.com/watsonx) via official SDK/API (`GatewayWatsonx` mode).
 
 - **High-Quality Voice**
   - [Chatterbox TTS](https://github.com/rsxdalv/chatterbox) for natural-sounding speech.
@@ -44,8 +47,8 @@ It ships with:
 
 - **Multiple Backend Modes in Unreal**
   - **Gateway (Ollama / watsonx)** – UE → FastAPI → LLM → TTS → UE (full text + audio).
-  - **Direct Ollama** – UE → Ollama (OpenAI-style chat completions, text only).
-  - **Local Llama.cpp (stub)** – ready for in-engine llama.cpp binding via `ThirdParty/LlamaCpp`.
+  - **Direct Ollama (OpenAI-style)** – UE → OpenAI-compatible `/v1/chat/completions` endpoint (text only).
+  - **Local Llama.cpp (Llama-Unreal)** – UE → in-engine llama.cpp via the `Llama` plugin (text only by default).
 
 - **Modular, Engine-Agnostic Architecture**
   - Clean REST API (`/api/vr_chat`) that any engine or app can call.
@@ -81,11 +84,11 @@ VRSecretary/
 │   │   ├── README.md
 │   │   └── vrsecretary_gateway/
 │   │       ├── main.py                      # FastAPI app entrypoint
-│   │       ├── config.py                    # Pydantic settings
-│   │       ├── api/                         # /health, /api/vr_chat
-│   │       ├── llm/                         # Ollama + watsonx.ai clients
-│   │       ├── tts/                         # Chatterbox TTS client
-│   │       └── models/                      # Pydantic schemas & session store
+│       │   ├── config.py                    # Pydantic settings
+│       │   ├── api/                         # /health, /api/vr_chat
+│       │   ├── llm/                         # Ollama + watsonx.ai clients
+│       │   ├── tts/                         # Chatterbox TTS client
+│       │   └── models/                      # Pydantic schemas & session store
 │   └── docker/
 │       ├── Dockerfile.gateway
 │       ├── docker-compose.dev.yml
@@ -93,25 +96,25 @@ VRSecretary/
 │
 ├── engine-plugins/
 │   ├── unreal/
-│   │   ├── VRSecretary.uplugin              # Unreal plugin descriptor
-│   │   └── Source/VRSecretary/
-│   │       ├── VRSecretary.Build.cs
-│   │       ├── Public/
-│   │       │   ├── VRSecretaryComponent.h   # Main C++ component (Blueprint-ready)
-│   │       │   ├── VRSecretarySettings.h    # Project settings (Gateway URL, modes, etc.)
-│   │       │   ├── VRSecretaryChatTypes.h   # Enums, config structs, delegates
-│   │       │   └── VRSecretaryLog.h
-│   │       └── Private/
-│   │           ├── VRSecretaryModule.cpp
-│   │           ├── VRSecretaryComponent.cpp
-│   │           ├── VRSecretarySettings.cpp
-│   │           ├── VRSecretaryLog.cpp
-│   │           └── (optional llama.cpp glue)
-│   │   └── ThirdParty/
-│   │       └── LlamaCpp/
-│   │           ├── Include/                 # Place llama.cpp headers here
-│   │           └── Lib/                     # Place built libs here
-│   └── unity/                               # (Future) Unity client skeleton
+│   │   └── VRSecretary/                     # Main Unreal plugin (v0.2+, production ready)
+│   │       ├── VRSecretary.uplugin          # Unreal plugin descriptor
+│   │       ├── Source/VRSecretary/
+│   │       │   ├── VRSecretary.Build.cs     # C++ build rules (HTTP + LlamaCore)
+│   │       │   ├── Public/
+│   │       │   │   ├── VRSecretaryComponent.h   # Main C++ component (Blueprint-ready)
+│   │       │   │   ├── VRSecretarySettings.h    # Project settings (Gateway URL, modes, etc.)
+│   │       │   │   ├── VRSecretaryChatTypes.h   # Enums, config structs, delegates
+│   │       │   │   └── VRSecretaryLog.h         # Log category
+│   │       │   └── Private/
+│   │       │       ├── VRSecretaryModule.cpp    # Module entry/exit
+│   │       │       ├── VRSecretaryComponent.cpp # Backend dispatch logic
+│   │       │       ├── VRSecretarySettings.cpp  # DeveloperSettings implementation
+│   │       │       └── VRSecretaryLog.cpp       # Log category implementation
+│   │       └── ThirdParty/
+│   │           └── LlamaCpp/
+│   │               ├── Include/             # (Optional) llama.cpp headers if using direct binding
+│   │               └── Lib/                 # (Optional) built libs if using direct binding
+│   └── unity/                               # Unity client skeleton (future)
 │
 ├── samples/
 │   ├── unreal-vr-secretary-demo/            # Example UE5 VR project
@@ -130,7 +133,6 @@ VRSecretary/
 │
 ├── tools/
 │   ├── scripts/
-│   │   ├── apply_vrsecretary_patch.sh       # Plugin patch/upgrade script
 │   │   ├── start_local_stack.sh             # Convenience stack startup (optional)
 │   │   └── generate_openapi_client.sh
 │   └── perf/
@@ -322,7 +324,34 @@ If this works, Unreal can use the same endpoint.
 
 ---
 
-### 5. Unreal: Sample Project (Recommended First Run)
+### 5. Apply the Unreal Plugin Patch (Recommended)
+
+The repo ships with (or expects) a helper script that updates the Unreal `VRSecretary` plugin
+code to the latest production-ready version (clean HTTP, `LocalLlamaCpp` via
+Llama-Unreal, etc.). Run this **once** after cloning:
+
+```bash
+cd /path/to/VRSecretary
+chmod +x tools/scripts/apply_vrsecretary_patch.sh
+./tools/scripts/apply_vrsecretary_patch.sh
+```
+
+What this script does:
+
+* Backs up the existing Unreal plugin files under `_backup_vrsecretary_YYYYMMDD_HHMMSS/`.
+* Deactivates the legacy v0.1 plugin layout.
+* Rewrites the `engine-plugins/unreal/VRSecretary` plugin to:
+
+  * Use modern build rules and dependencies (`HTTP`, `Json`, `JsonUtilities`, `LlamaCore`).
+  * Implement `LocalLlamaCpp` using the Llama-Unreal `ULlamaComponent`.
+  * Keep **Gateway** and **DirectOllama** using OpenAI-style `/v1/chat/completions`.
+
+After running the patch, open or regenerate your Unreal project files and build
+as usual.
+
+---
+
+### 6. Unreal: Sample Project (Recommended First Run)
 
 1. In Explorer/Finder, go to:
 
@@ -357,7 +386,7 @@ Use the included Blueprint (`BP_VRSecretaryManager`) input actions (e.g., contro
 
 ---
 
-### 6. Unreal: Using the Plugin in Your Own Project
+### 7. Unreal: Using the Plugin in Your Own Project
 
 You can integrate VRSecretary into any UE 5.3+ C++ project.
 
@@ -397,8 +426,8 @@ You can integrate VRSecretary into any UE 5.3+ C++ project.
    from Blueprint (e.g., on button press). The component will:
 
    * Use **Gateway** mode: call the FastAPI backend → LLM → TTS → return text + base64 audio.
-   * Use **DirectOllama** mode: call Ollama directly → return text only.
-   * Use **LocalLlamaCpp** (stub): currently logs and falls back to Gateway; ready for in-engine llama.cpp once you wire up `ThirdParty/LlamaCpp`.
+   * Use **DirectOllama** mode: call an OpenAI-compatible `/v1/chat/completions` endpoint → return text only.
+   * Use **LocalLlamaCpp** mode: call an in-engine llama.cpp model via the Llama-Unreal plugin → return text only.
 
 For detailed, step-by-step integration (Blueprint graphs, widget setup, etc.), see:
 `docs/unreal-integration.md` and `engine-plugins/unreal/VRSecretary/README.md`.
@@ -438,17 +467,26 @@ SESSION_MAX_HISTORY=10
 ### Unreal Plugin Settings (Project Settings → Plugins → VRSecretary)
 
 * **Gateway URL** – e.g. `http://localhost:8000`
+
 * **HTTP Timeout** – e.g. `60.0`
+
 * **Backend Mode** (`EVRSecretaryBackendMode`):
 
   * Gateway (Ollama)
   * Gateway (watsonx.ai)
   * DirectOllama
-  * LocalLlamaCpp (stub)
+  * LocalLlamaCpp
+
 * **Direct Ollama URL** – e.g. `http://localhost:11434`
+
 * **Direct Ollama Model** – e.g. `llama3`
 
-You can also override the backend mode per component via `BackendModeOverride` on `VRSecretaryComponent`.
+You can also override the backend mode per component via `bOverrideBackendMode` on `VRSecretaryComponent`.
+
+For **LocalLlamaCpp**, ensure that:
+
+* The **Llama-Unreal plugin** (`Llama`) is enabled in your project.
+* The actor that owns `VRSecretaryComponent` also has a **ULlamaComponent** attached, configured with a valid GGUF model.
 
 ---
 
@@ -599,7 +637,7 @@ Contributions are welcome!
 Ideas for contributions:
 
 * Full **Unity** client implementation.
-* In-engine **llama.cpp** integration using `ThirdParty/LlamaCpp`.
+* Extended **llama.cpp** integration via `ThirdParty/LlamaCpp` (e.g., streaming, embeddings).
 * RAG (Retrieval-Augmented Generation) with local docs.
 * Additional LLM backends (OpenAI, Anthropic, etc.).
 * Better VR UX, gestures, and spatial interactions.
@@ -621,11 +659,9 @@ Treat code and assets as having **separate licenses**. For any commercial produc
 * [IBM watsonx.ai](https://www.ibm.com/watsonx)
 * [Chatterbox TTS](https://github.com/rsxdalv/chatterbox)
 * [Unreal Engine](https://www.unrealengine.com/)
-* [llama.cpp](https://github.com/ggerganov/llama.cpp) (for potential in-engine integration)
+* [llama.cpp](https://github.com/ggerganov/llama.cpp) (for in-engine integration via Llama-Unreal)
 
 ---
 
 VRSecretary is designed as a **solid, realistic starting point** for AI characters in VR.
 Run it, explore it, and then bend it into whatever virtual assistant your world needs. ✨
-
-
