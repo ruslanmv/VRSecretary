@@ -7,10 +7,23 @@
 #   - Check if torch already has CUDA support; if yes, do nothing.
 #   - Upgrade pip/setuptools/wheel from the *normal* PyPI index.
 #   - Uninstall any existing torch/torchvision/torchaudio.
-#   - Install torch/torchvision/torchaudio from the CUDA 12.1 wheel index:
-#       https://download.pytorch.org/whl/cu121
+#   - Install pinned CUDA wheels for cu121:
+#       torch==2.5.1+cu121
+#       torchvision==0.20.1+cu121
+#       torchaudio==2.5.1+cu121
 
 $ErrorActionPreference = "Stop"
+
+# ----------------- Pinned versions that EXIST on cu121 -----------------
+
+# These are the latest torch 2.5.x CUDA 12.1 wheels as of now.
+# If PyTorch changes their CUDA support, you might have to update them.
+$TORCH_VERSION       = "2.5.1+cu121"
+$TORCHVISION_VERSION = "0.20.1+cu121"
+$TORCHAUDIO_VERSION  = "2.5.1+cu121"
+
+# CUDA wheels index for PyTorch cu121
+$CUDA_INDEX_URL = "https://download.pytorch.org/whl/cu121"
 
 # Ensure TLS 1.2 for downloads on older .NET
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -56,9 +69,6 @@ if ($hasCudaTorch) {
     Write-Host "[DONE] Nothing to do."
     exit 0
 }
-
-# CUDA wheels index for PyTorch 2.x (cu121)
-$CUDA_INDEX_URL = "https://download.pytorch.org/whl/cu121"
 
 # ----------------- Find project root (folder containing pyproject.toml) -----------------
 
@@ -109,17 +119,34 @@ try {
     Write-Host "[WARN] Uninstall may have partially failed (some packages missing), continuing..."
 }
 
-# ----------------- Install CUDA wheels directly -----------------
+# ----------------- Install pinned CUDA wheels directly -----------------
 
 Write-Host ""
-Write-Host "[INFO] Installing torch, torchvision, torchaudio from CUDA index..."
+Write-Host "[INFO] Installing pinned CUDA wheels from index:"
+Write-Host "       torch==$TORCH_VERSION"
+Write-Host "       torchvision==$TORCHVISION_VERSION"
+Write-Host "       torchaudio==$TORCHAUDIO_VERSION"
+Write-Host ""
 Write-Host "[INFO] Running:"
-Write-Host "       python -m pip install torch torchvision torchaudio --index-url $CUDA_INDEX_URL"
+Write-Host "       python -m pip install `"
+Write-Host "           torch==$TORCH_VERSION `"
+Write-Host "           torchvision==$TORCHVISION_VERSION `"
+Write-Host "           torchaudio==$TORCHAUDIO_VERSION `"
+Write-Host "           --index-url $CUDA_INDEX_URL"
 Write-Host ""
 
-& python -m pip install torch torchvision torchaudio --index-url $CUDA_INDEX_URL
+& python -m pip install `
+    "torch==$TORCH_VERSION" `
+    "torchvision==$TORCHVISION_VERSION" `
+    "torchaudio==$TORCHAUDIO_VERSION" `
+    --index-url $CUDA_INDEX_URL
+
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "[ERROR] pip install torch/vision/audio from CUDA index failed with exit code $LASTEXITCODE."
+    Write-Host "[ERROR] pip install of pinned CUDA wheels failed with exit code $LASTEXITCODE."
+    Write-Host "[HINT] This may mean the index $CUDA_INDEX_URL does not have these versions anymore."
+    Write-Host "[HINT] Check PyTorch 'Get Started' page and adjust:"
+    Write-Host "       - $CUDA_INDEX_URL"
+    Write-Host "       - the pinned versions at the top of this script."
     exit 1
 }
 

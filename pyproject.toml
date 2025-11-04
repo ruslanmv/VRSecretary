@@ -58,9 +58,10 @@ lab = [
   "jupyterlab>=4.2",
 ]
 
-# Install this extra when you *have* a CUDA GPU and want the CUDA wheels.
+# Install this extra when you *have* a CUDA GPU and want the Torch stack.
+# CPU-only installs can ignore this.
 cuda = [
-  "torch",          # will pull CUDA wheel if you point pip at the CUDA index
+  "torch",
   "torchvision",
   "torchaudio",
 ]
