@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "simple-environment"
-version = "0.1.1"                               # bump so installers don't cache 0.1.0
+version = "0.1.1"                                   # bump so installers don't cache 0.1.0
 description = "Minimal environment for Jupyter Notebook (Python 3.11) with Ollama client, for VRSecretary development."
 # Chatterbox + Torch stack is really tested on 3.11; avoid 3.12 for now
 requires-python = ">=3.11,<3.12"
@@ -27,16 +27,26 @@ keywords = [
 ]
 
 dependencies = [
-  "notebook>=7.2",                              # modern Notebook
+  "notebook>=7.2",                                  # modern Notebook
   "ipykernel>=6.29",
-  "ollama>=0.6,<1.0",                           # pin to a stable client range
+  "ollama>=0.6,<1.0",                               # pin to a stable client range
+
+  # --- Added Dependencies for ASGI/Web Server ---
+  "uvicorn[standard]>=0.38.0",
+  "httptools>=0.7.1",
+  # ----------------------------------------------
 
   # --- TTS stack: versions aligned with chatterbox-tts 0.1.4's ecosystem ---
-  "numpy==1.25.2",                              # within chatterbox-tts range >=1.24,<1.26
-  "onnx==1.19.0",                               # works with ml-dtypes 0.5.x
-  "ml-dtypes==0.5.3",                           # exposes float4_e2m1fn, fixes your crash
-  "chatterbox-tts==0.1.4",                      # your TTS engine
-  "chatterbox-server[server]==0.1.4",           # HTTP API + CLI `chatterbox-server`
+  "numpy==1.25.2",                                  # within chatterbox-tts range >=1.24,<1.26
+  "onnx==1.19.0",                                   # works with ml-dtypes 0.5.x
+  "ml-dtypes==0.5.3",                               # exposes float4_e2m1fn, fixes your crash
+  "chatterbox-tts==0.1.4",                          # your TTS engine
+  "requests>=2.32.0",                               # HTTP client for TTS client GUI
+  "pyaudio>=0.2.14",
+  "simpleaudio>=1.0.4",                             # simple cross-platform audio playback
+
+  # NOTE: torch / torchvision / torchaudio are provided in the optional "cuda" extra
+  # so environments without CUDA don't get broken installs by default.
 ]
 
 [project.optional-dependencies]
@@ -46,6 +56,13 @@ dev = [
 ]
 lab = [
   "jupyterlab>=4.2",
+]
+
+# Install this extra when you *have* a CUDA GPU and want the CUDA wheels.
+cuda = [
+  "torch",          # will pull CUDA wheel if you point pip at the CUDA index
+  "torchvision",
+  "torchaudio",
 ]
 
 [project.urls]
