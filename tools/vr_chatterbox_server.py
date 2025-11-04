@@ -32,8 +32,10 @@ Key features
 
 6. Per-request control of chunking:
    - Field `chunk_by_sentences: bool = True` in `SpeechRequest`.
-   - If `chunk_by_sentences=False`, the whole input is treated as one big chunk
-     (even for streaming).
+   - If `chunk_by_sentences=False`, the WHOLE input is treated as ONE big chunk
+     (even for streaming) – no sentence splitting is applied at all.
+   - New fields `max_chunk_words` and `max_chunk_sentences` let the client
+     control how big each sentence-based chunk can be.
 
 7. Clean shutdown:
    - On FastAPI shutdown, the ThreadPoolExecutor is shut down cleanly to avoid
@@ -152,6 +154,26 @@ class SpeechRequest(BaseModel):
             "If False, treat the whole input as a single chunk even for streaming."
         ),
     )
+    max_chunk_words: Optional[int] = Field(
+        None,
+        ge=5,
+        le=2000,
+        description=(
+            "Override default chunk size (approximate words per chunk) when "
+            "chunk_by_sentences=True. Ignored if chunk_by_sentences=False."
+        ),
+    )
+    max_chunk_sentences: Optional[int] = Field(
+        None,
+        ge=1,
+        le=200,
+        description=(
+            "Maximum number of sentences per chunk when chunk_by_sentences=True. "
+            "If set, a new chunk will be started once this limit is reached, even "
+            "if the word count is still below max_chunk_words. Ignored if "
+            "chunk_by_sentences=False."
+        ),
+    )
 
 
 class ErrorResponse(BaseModel):
@@ -206,7 +228,7 @@ class VoiceProfileManager:
                     )
                     self.model.prepare_conditionals(path, exaggeration=prep_exaggeration)
                     self.prepared[voice_type] = True
-                    logger.info("✓ %s voice profile loaded", voice_type.capitalize())
+                    logger.info("\u2713 %s voice profile loaded", voice_type.capitalize())
                 except Exception as exc:
                     logger.warning("Failed to load %s voice: %s", voice_type, exc)
                     self.prepared[voice_type] = False
@@ -267,7 +289,7 @@ class ChatterboxServiceOptimized:
             if self._initialized:
                 return
 
-            logger.info("🚀 Initializing ChatterboxTTS on %s...", self.device)
+            logger.info("\ud83d\ude80 Initializing ChatterboxTTS on %s...", self.device)
             start = time.time()
 
             # Load model
@@ -297,19 +319,19 @@ class ChatterboxServiceOptimized:
                             cfg_weight=0.35,
                             exaggeration=0.25,
                         )
-                    logger.info("✓ Warmup completed")
+                    logger.info("\u2713 Warmup completed")
                 except Exception as exc:
                     logger.warning("Warmup failed (non-critical): %s", exc)
 
             self._initialized = True
             elapsed = time.time() - start
-            logger.info("✓ ChatterboxTTS ready in %.2f seconds", elapsed)
+            logger.info("\u2713 ChatterboxTTS ready in %.2f seconds", elapsed)
 
     def shutdown(self) -> None:
         """Cleanly shutdown internal resources (executor, etc.)."""
-        logger.info("🛑 Shutting down TTS executor...")
+        logger.info("\ud83d\uded1 Shutting down TTS executor...")
         self._executor.shutdown(wait=True, cancel_futures=True)
-        logger.info("🛑 TTS executor shutdown complete.")
+        logger.info("\ud83d\uded1 TTS executor shutdown complete.")
 
     @property
     def model(self) -> ChatterboxTTS:
@@ -348,15 +370,22 @@ class ChatterboxServiceOptimized:
         # Fallback: if regex failed to split, return the whole text as one.
         return sentences or [text]
 
-    def _chunk_text(self, text: str, chunk_size: int = CHUNK_SIZE) -> list[str]:
+    def _chunk_text(
+        self,
+        text: str,
+        word_target: int = CHUNK_SIZE,
+        max_sentences: Optional[int] = None,
+    ) -> list[str]:
         """Split text into chunks for streaming generation.
 
         IMPORTANT: We never split inside a sentence. We:
         - First split text into full sentences.
         - Then group consecutive sentences into chunks whose total word count
-          is approximately <= chunk_size.
-        - If a single sentence is longer than chunk_size, we keep it as its
+          is approximately <= `word_target`.
+        - If a single sentence is longer than `word_target`, we keep it as its
           own chunk (no splitting inside it).
+        - If `max_sentences` is provided, we also start a new chunk when the
+          sentence count in the current chunk would exceed that limit.
         """
         sentences = self._split_into_sentences(text)
         if not sentences:
@@ -369,16 +398,26 @@ class ChatterboxServiceOptimized:
         for sent in sentences:
             sent_words = len(sent.split())
 
-            # If we already have some sentences in the current chunk and
-            # adding this one would exceed the target size, flush the chunk.
-            if current_sentences and (current_words + sent_words) > chunk_size:
+            if not current_sentences:
+                # Start a new chunk with this sentence.
+                current_sentences = [sent]
+                current_words = sent_words
+                continue
+
+            new_words = current_words + sent_words
+            new_sentence_count = len(current_sentences) + 1
+
+            # If adding this sentence would exceed our word or sentence target,
+            # flush the current chunk and start a new one.
+            if new_words > word_target or (
+                max_sentences is not None and new_sentence_count > max_sentences
+            ):
                 chunks.append(" ".join(current_sentences))
                 current_sentences = [sent]
                 current_words = sent_words
             else:
-                # Otherwise, add the sentence to the current chunk.
                 current_sentences.append(sent)
-                current_words += sent_words
+                current_words = new_words
 
         if current_sentences:
             chunks.append(" ".join(current_sentences))
@@ -489,30 +528,40 @@ class ChatterboxServiceOptimized:
         - As soon as a chunk is ready, it is yielded to the client, so playback
           can start while the next chunk is being generated.
         - If `req.chunk_by_sentences` is False, the entire input is treated as
-          a single chunk even in streaming mode.
+          a SINGLE chunk even in streaming mode (no sentence splitting).
+        - `req.max_chunk_words` and `req.max_chunk_sentences` allow the client
+          to tune how large chunks are, which can help the TTS model reliably
+          hit EOS instead of drifting into very long generations.
         """
         self._active_requests += 1
         try:
             if req.chunk_by_sentences:
-                chunks = self._chunk_text(req.input, CHUNK_SIZE)
+                word_target = req.max_chunk_words or CHUNK_SIZE
+                max_sentences = req.max_chunk_sentences
+                chunks = self._chunk_text(req.input, word_target=word_target, max_sentences=max_sentences)
             else:
+                # IMPORTANT: when chunking is disabled, use the FULL text
+                # as a single chunk. Nothing is split.
                 chunks = [req.input]
+                word_target = len(req.input.split())
+                max_sentences = None
 
             num_chunks = len(chunks)
 
             logger.info(
-                "Streaming TTS: %d chunks, voice=%s, temp=%.2f, chunk_by_sentences=%s",
+                "Streaming TTS: %d chunk(s), voice=%s, temp=%.2f, chunk_by_sentences=%s, "
+                "word_target=%s, max_sentences=%s",
                 num_chunks,
                 req.voice,
                 req.temperature,
                 req.chunk_by_sentences,
+                word_target,
+                max_sentences,
             )
 
             loop = asyncio.get_event_loop()
 
             # Generate chunks sequentially for this request.
-            # This avoids per-request parallel model.generate calls, which
-            # were causing the "last chunk never ends" / read timeout issues.
             for idx, chunk_text in enumerate(chunks):
                 chunk_bytes = await loop.run_in_executor(
                     self._executor,
@@ -552,7 +601,7 @@ class ChatterboxServiceOptimized:
                 self._generate_and_encode_chunk,
                 0,
                 1,
-                req.input,
+                req.input,  # ALWAYS full text in non-streaming mode
                 req.voice,
                 req.temperature,
                 req.cfg_weight,
@@ -603,14 +652,14 @@ def create_app(device: str) -> FastAPI:
 
     @app.on_event("startup")
     async def startup() -> None:
-        logger.info("🚀 Starting up TTS server...")
+        logger.info("\ud83d\ude80 Starting up TTS server...")
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, service.initialize)
-        logger.info("✓ Server ready for requests")
+        logger.info("\u2713 Server ready for requests")
 
     @app.on_event("shutdown")
     async def shutdown_event() -> None:
-        logger.info("🚦 FastAPI shutdown received, cleaning up TTS service...")
+        logger.info("\ud83d\uded6 FastAPI shutdown received, cleaning up TTS service...")
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, service.shutdown)
 
@@ -717,10 +766,10 @@ def main() -> None:
     configure_logging(args.log_level)
 
     device = detect_device(args.device)
-    logger.info("🎤 Starting optimized TTS server on %s:%d", args.host, args.port)
-    logger.info("📊 Device: %s | Max workers: %d", device, MAX_WORKERS)
+    logger.info("\ud83c\udfa4 Starting optimized TTS server on %s:%d", args.host, args.port)
+    logger.info("\ud83d\udcca Device: %s | Max workers: %d", device, MAX_WORKERS)
     logger.info(
-        "⚙ FAST_MODE=%s | CHUNK_SIZE=%d | CHUNK_PARALLELISM=%d",
+        "\u2699 FAST_MODE=%s | CHUNK_SIZE=%d | CHUNK_PARALLELISM=%d",
         FAST_MODE,
         CHUNK_SIZE,
         CHUNK_PARALLELISM,
