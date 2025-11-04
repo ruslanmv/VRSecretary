@@ -35,16 +35,6 @@ Before using the plugin, make sure you have:
   - The **Llama-Unreal** plugin (`Llama` with `LlamaCore` module) installed and enabled
   - A GGUF model configured on a `ULlamaComponent` in your project
 
-If you cloned the full VRSecretary repo, also run the patch script once:
-
-```bash
-cd /path/to/VRSecretary
-chmod +x tools/scripts/apply_vrsecretary_patch.sh
-./tools/scripts/apply_vrsecretary_patch.sh
-````
-
-This ensures the Unreal plugin sources are up to date and consistent with this README.
-
 ---
 
 ## 2. Installing the Plugin into Your Project

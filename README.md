@@ -324,34 +324,7 @@ If this works, Unreal can use the same endpoint.
 
 ---
 
-### 5. Apply the Unreal Plugin Patch (Recommended)
-
-The repo ships with (or expects) a helper script that updates the Unreal `VRSecretary` plugin
-code to the latest production-ready version (clean HTTP, `LocalLlamaCpp` via
-Llama-Unreal, etc.). Run this **once** after cloning:
-
-```bash
-cd /path/to/VRSecretary
-chmod +x tools/scripts/apply_vrsecretary_patch.sh
-./tools/scripts/apply_vrsecretary_patch.sh
-```
-
-What this script does:
-
-* Backs up the existing Unreal plugin files under `_backup_vrsecretary_YYYYMMDD_HHMMSS/`.
-* Deactivates the legacy v0.1 plugin layout.
-* Rewrites the `engine-plugins/unreal/VRSecretary` plugin to:
-
-  * Use modern build rules and dependencies (`HTTP`, `Json`, `JsonUtilities`, `LlamaCore`).
-  * Implement `LocalLlamaCpp` using the Llama-Unreal `ULlamaComponent`.
-  * Keep **Gateway** and **DirectOllama** using OpenAI-style `/v1/chat/completions`.
-
-After running the patch, open or regenerate your Unreal project files and build
-as usual.
-
----
-
-### 6. Unreal: Sample Project (Recommended First Run)
+### 5. Unreal: Sample Project (Recommended First Run)
 
 1. In Explorer/Finder, go to:
 
@@ -386,7 +359,7 @@ Use the included Blueprint (`BP_VRSecretaryManager`) input actions (e.g., contro
 
 ---
 
-### 7. Unreal: Using the Plugin in Your Own Project
+### 6. Unreal: Using the Plugin in Your Own Project
 
 You can integrate VRSecretary into any UE 5.3+ C++ project.
 
