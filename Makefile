@@ -279,15 +279,7 @@ endif
 
 install-ollama: ## Install Ollama on the host (Win/macOS/Linux) if missing
 ifeq ($(OS),Windows_NT)
-	@if (Get-Command ollama -ErrorAction SilentlyContinue) { \
-		Write-Host 'Ollama already installed.'; \
-	} else { \
-		Write-Host 'Installing Ollama via winget (requires Windows 10/11)...'; \
-		winget install -e --id Ollama.Ollama; \
-		if ($$LASTEXITCODE -ne 0) { \
-			Write-Host 'winget install failed; please install from https://ollama.com/download'; \
-		} \
-	}
+	@if (Get-Command ollama -ErrorAction SilentlyContinue) { Write-Host 'Ollama already installed.' } else { Write-Host 'Installing Ollama via winget (requires Windows 10/11)...'; winget install -e --id Ollama.Ollama; if ($$LASTEXITCODE -ne 0) { Write-Host 'winget install failed; please install from https://ollama.com/download'; } }
 else
 	@if command -v ollama >/dev/null 2>&1; then \
 		echo "Ollama already installed."; \
