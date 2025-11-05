@@ -107,7 +107,14 @@ Please install these before you continue:
 
    * Go to: [https://github.com/rsxdalv/chatterbox](https://github.com/rsxdalv/chatterbox)
    * Follow the "Getting started" instructions to install it.
-   * You only need the basic `chatterbox-server` command working.
+   
+ .\scripts\windows\install_cuda_win.ps1
+
+ 
+ python .\examples\test_voice.py
+
+
+![](assets/2025-11-05-01-01-03.png)
 
 6. **Make** (recommended but optional)
 
