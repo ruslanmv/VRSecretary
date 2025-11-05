@@ -7,61 +7,72 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-green.svg)](https://www.python.org/)
 
 ---
+
 ![](assets/2025-11-04-12-18-56.png)
 
 ## ✨ What Is VRSecretary?
 
 VRSecretary is a **production-ready reference architecture** and implementation for building AI-powered VR characters:
 
-- Frontend in **Unreal Engine 5** (VR-ready).
-- Backend in **Python / FastAPI**.
-- LLM via **Ollama** (local) or **IBM watsonx.ai** (cloud).
-- TTS via **Chatterbox** (self-hosted, OpenAI-style).
+* Frontend in **Unreal Engine 5** (VR-ready).
+* Backend in **Python / FastAPI**.
+* LLM via **Ollama** (local) or **IBM watsonx.ai** (cloud).
+* TTS via **Chatterbox** (self-hosted, OpenAI-style).
 
 It ships with:
 
-- A **VR secretary avatar** (Scifi Girl v.01 – non-commercial demo, GLB ready to import).
-- An **Unreal plugin** (`VRSecretary`) exposing a simple Blueprint-friendly component.
-- A **gateway backend** that exposes a clean `/api/vr_chat` HTTP endpoint.
-- A **Direct Ollama mode** (OpenAI-style `/v1/chat/completions`, text-only via HTTP).
-- A **Local Llama.cpp mode** implemented via the **Llama-Unreal** plugin for fully in-engine models.
-- Documentation to extend the same API to other engines (e.g., Unity).
+* A **VR secretary avatar** (Scifi Girl v.01 – non-commercial demo, GLB ready to import).
+* An **Unreal plugin** (`VRSecretary`) exposing a simple Blueprint-friendly component.
+* A **gateway backend** that exposes a clean `/api/vr_chat` HTTP endpoint.
+* A **Direct Ollama mode** (OpenAI-style `/v1/chat/completions`, text-only via HTTP).
+* A **Local Llama.cpp mode** implemented via the **Llama-Unreal** plugin for fully in-engine models.
+* Documentation to extend the same API to other engines (e.g., Unity).
 
 ---
 
 ## 🌟 Key Features
 
-- **VR-native UX**
-  - Built around UE5’s VR template (controllers, teleport, VR camera).
-  - Uses a 3D avatar, audio, and subtitles for an immersive conversational assistant.
+* **VR-native UX**
 
-- **Flexible LLM Backends**
-  - **Offline (default):** [Ollama](https://ollama.ai/) on your machine (e.g. `llama3`, Granite, Mistral) via either:
-    - The **FastAPI gateway** (`GatewayOllama` mode), or
-    - A **direct OpenAI-style HTTP endpoint** (`DirectOllama` mode).
-  - **Online (optional):** [IBM watsonx.ai](https://www.ibm.com/watsonx) via official SDK/API (`GatewayWatsonx` mode).
+  * Built around UE5’s VR template (controllers, teleport, VR camera).
+  * Uses a 3D avatar, audio, and subtitles for an immersive conversational assistant.
 
-- **High-Quality Voice**
-  - [Chatterbox TTS](https://github.com/rsxdalv/chatterbox) for natural-sounding speech.
-  - Text → WAV audio streamed back to Unreal and played at runtime.
+* **Flexible LLM Backends**
 
-- **Multiple Backend Modes in Unreal**
-  - **Gateway (Ollama / watsonx)** – UE → FastAPI → LLM → TTS → UE (full text + audio).
-  - **Direct Ollama (OpenAI-style)** – UE → OpenAI-compatible `/v1/chat/completions` endpoint (text only).
-  - **Local Llama.cpp (Llama-Unreal)** – UE → in-engine llama.cpp via the `Llama` plugin (text only by default).
+  * **Offline (default):** [Ollama](https://ollama.ai/) on your machine (e.g. `llama3`, Granite, Mistral) via either:
 
-- **Modular, Engine-Agnostic Architecture**
-  - Clean REST API (`/api/vr_chat`) that any engine or app can call.
-  - Unreal plugin is only one possible client; Unity and others can reuse the same backend.
+    * The **FastAPI gateway** (`GatewayOllama` mode), or
+    * A **direct OpenAI-style HTTP endpoint** (`DirectOllama` mode).
+  * **Online (optional):** [IBM watsonx.ai](https://www.ibm.com/watsonx) via official SDK/API (`GatewayWatsonx` mode).
 
-- **Sample Avatar Included & Ready to Use**
-  - **Scifi Girl v.01** GLB included under CC BY-NC-SA for non-commercial use.
-  - Ready to import and hook up to the secretary Blueprint in the demo project.
+* **High-Quality Voice**
 
-- **Production-Oriented Layout**
-  - Clear separation of backend, engine plugins, assets, and tools.
-  - Configurable via `.env` (backend) and Project Settings (Unreal).
-  - Dockerized backend, load test scripts, and extensible plugin architecture.
+  * [Chatterbox TTS](https://github.com/rsxdalv/chatterbox) for natural-sounding speech, wrapped in a small FastAPI server (`tools/vr_chatterbox_server.py`).
+  * Supports **sentence-aware streaming chunks** and **full-text non-chunked** mode, configurable per request (chunk size in words / sentences).
+  * Robust EOS-safe generation (per-chunk sequential sampling) to avoid “stuck last chunk” issues on long answers.
+  * Text → WAV audio streamed back to Unreal and played at runtime.
+
+* **Multiple Backend Modes in Unreal**
+
+  * **Gateway (Ollama / watsonx)** – UE → FastAPI → LLM → TTS → UE (full text + audio).
+  * **Direct Ollama (OpenAI-style)** – UE → OpenAI-compatible `/v1/chat/completions` endpoint (text only).
+  * **Local Llama.cpp (Llama-Unreal)** – UE → in-engine llama.cpp via the `Llama` plugin (text only by default).
+
+* **Modular, Engine-Agnostic Architecture**
+
+  * Clean REST API (`/api/vr_chat`) that any engine or app can call.
+  * Unreal plugin is only one possible client; Unity and others can reuse the same backend.
+
+* **Sample Avatar Included & Ready to Use**
+
+  * **Scifi Girl v.01** GLB included under CC BY-NC-SA for non-commercial use.
+  * Ready to import and hook up to the secretary Blueprint in the demo project.
+
+* **Production-Oriented Layout**
+
+  * Clear separation of backend, engine plugins, assets, and tools.
+  * Configurable via `.env` (backend) and Project Settings (Unreal).
+  * Dockerized backend, load test scripts, and extensible plugin architecture.
 
 ---
 
@@ -84,11 +95,11 @@ VRSecretary/
 │   │   ├── README.md
 │   │   └── vrsecretary_gateway/
 │   │       ├── main.py                      # FastAPI app entrypoint
-│       │   ├── config.py                    # Pydantic settings
-│       │   ├── api/                         # /health, /api/vr_chat
-│       │   ├── llm/                         # Ollama + watsonx.ai clients
-│       │   ├── tts/                         # Chatterbox TTS client
-│       │   └── models/                      # Pydantic schemas & session store
+│   │       ├── config.py                    # Pydantic settings
+│   │       ├── api/                         # /health, /api/vr_chat
+│   │       ├── llm/                         # Ollama + watsonx.ai clients
+│   │       ├── tts/                         # Chatterbox TTS client
+│   │       └── models/                      # Pydantic schemas & session store
 │   └── docker/
 │       ├── Dockerfile.gateway
 │       ├── docker-compose.dev.yml
@@ -135,16 +146,17 @@ VRSecretary/
 │   ├── scripts/
 │   │   ├── start_local_stack.sh             # Convenience stack startup (optional)
 │   │   └── generate_openapi_client.sh
-│   └── perf/
-│       ├── load_test_vr_chat.k6.js
-│       └── profiling_notes.md
+│   ├── perf/
+│   │   ├── load_test_vr_chat.k6.js
+│   │   └── profiling_notes.md
+│   └── vr_chatterbox_server.py              # Optimized Chatterbox TTS server (FastAPI + streaming)
 │
 ├── .github/                                 # CI/CD workflows, issue templates
 ├── LICENSE
 ├── CONTRIBUTING.md
 ├── CODE_OF_CONDUCT.md
 └── README.md                                # (This file)
-````
+```
 
 For plugin-specific usage, see
 `engine-plugins/unreal/VRSecretary/README.md`.
@@ -282,22 +294,135 @@ Ensure `.env` has `OLLAMA_MODEL=llama3` (or whichever you use).
 
 ### 3. TTS: Start Chatterbox
 
-Install [Chatterbox](https://github.com/rsxdalv/chatterbox) per its README, then:
+VRSecretary uses [chatterbox-tts](https://github.com/rsxdalv/chatterbox) for high-quality speech, wrapped in a small FastAPI server (`tools/vr_chatterbox_server.py`) that:
+
+* Exposes an **OpenAI-style TTS API** (`/v1/audio/speech` and `/v1/audio/speech/stream`).
+* Supports **sentence-aware streaming chunks** and **full-text non-chunked mode**.
+* Uses default reference voices from `voices/female.wav` and `voices/male.wav` (overridable via env vars).
+* Auto-detects **CUDA / MPS / CPU** or lets you force a device.
+* Avoids “stuck last chunk” issues by doing EOS-safe, per-chunk sequential generation.
+
+#### 3.1 Install Python deps for TTS
+
+If you already installed the gateway in a virtual environment (`pip install -e .` inside `backend/gateway`), you can reuse the **same venv** for the TTS server. Just make sure it’s activated.
+
+#### 3.2 Run the optimized Chatterbox server
+
+From the **repo root**:
 
 ```bash
-chatterbox-server --port 4123
+# Windows (PowerShell)
+cd VRSecretary
+# Activate the same venv you used for backend/gateway
+backend/gateway/.venv/Scripts/Activate.ps1
+python tools/vr_chatterbox_server.py --host 0.0.0.0 --port 4123
+
+# macOS / Linux
+# cd VRSecretary
+# source backend/gateway/.venv/bin/activate
+# python tools/vr_chatterbox_server.py --host 0.0.0.0 --port 4123
 ```
 
-Quick sanity check:
+The server:
+
+* Listens on `http://localhost:4123` by default (matching `CHATTERBOX_URL` in your `.env`).
+* Exposes `/health` for basic status.
+* Supports both **non-streaming** (`/v1/audio/speech`) and **streaming** (`/v1/audio/speech/stream`) TTS.
+
+You can tweak behaviour with environment variables, for example:
+
+```bash
+# choose device explicitly: "cuda", "mps", or "cpu"
+export CHATTERBOX_DEVICE=cuda
+
+# control default chunk size (approx. words per chunk) when chunking is enabled
+export CHATTERBOX_CHUNK_SIZE=20
+
+# optional reference voice files (otherwise defaults to voices/female.wav / voices/male.wav)
+export CHATTERBOX_FEMALE_VOICE=/path/to/your_female_voice.wav
+export CHATTERBOX_MALE_VOICE=/path/to/your_male_voice.wav
+```
+Here’s the updated README section with **Windows (PowerShell)** first, then **Linux/macOS (curl)**, for both non-streaming and streaming checks.
+
+#### 3.3 Sanity check (non-streaming)
+
+**Windows (PowerShell)**
+
+```powershell
+Invoke-WebRequest `
+  -Uri "http://localhost:4123/v1/audio/speech" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body '{
+    "input": "Hello from Ailey.",
+    "voice": "female",
+    "temperature": 0.6,
+    "cfg_weight": 0.5,
+    "exaggeration": 0.35,
+    "speed": 1.0,
+    "stream": false,
+    "chunk_by_sentences": true
+  }' `
+  -OutFile "test.wav"
+````
+
+**Linux / macOS (curl)**
 
 ```bash
 curl -X POST http://localhost:4123/v1/audio/speech \
   -H "Content-Type: application/json" \
-  -d '{"input": "Hello from Ailey.", "temperature": 0.6, "cfg_weight": 0.5, "exaggeration": 0.35}' \
+  -d '{
+        "input": "Hello from Ailey.",
+        "voice": "female",
+        "temperature": 0.6,
+        "cfg_weight": 0.5,
+        "exaggeration": 0.35,
+        "speed": 1.0,
+        "stream": false,
+        "chunk_by_sentences": true,
+        "max_chunk_words": 25,
+        "max_chunk_sentences": 2
+      }' \
   --output test.wav
 ```
 
 Play `test.wav` to verify audio.
+
+You can also hit the **streaming** endpoint:
+
+**Windows (PowerShell)**
+
+```powershell
+Invoke-WebRequest `
+  -Uri "http://localhost:4123/v1/audio/speech/stream" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body '{
+    "input": "Streaming test. This should arrive in sentence-sized chunks.",
+    "voice": "female",
+    "stream": true,
+    "chunk_by_sentences": true
+  }' `
+  -OutFile "stream_test.wav"
+```
+
+**Linux / macOS (curl)**
+
+```bash
+curl -N -X POST http://localhost:4123/v1/audio/speech/stream \
+  -H "Content-Type: application/json" \
+  -d '{
+        "input": "Streaming test. This should arrive in sentence-sized chunks.",
+        "voice": "female",
+        "stream": true,
+        "chunk_by_sentences": true
+      }' > stream_test.wav
+```
+
+
+
+
+If you prefer, you can still run the upstream `chatterbox-server` CLI instead of `tools/vr_chatterbox_server.py` as long as it exposes a compatible `/v1/audio/speech` API and your `CHATTERBOX_URL` points to it.
 
 ---
 
@@ -534,7 +659,8 @@ This will:
 Chatterbox is typically run on the host for GPU access:
 
 ```bash
-chatterbox-server --port 4123
+# Using the optimized server from this repo
+python tools/vr_chatterbox_server.py --host 0.0.0.0 --port 4123
 ```
 
 The compose file already uses `CHATTERBOX_URL=http://host.docker.internal:4123`.
