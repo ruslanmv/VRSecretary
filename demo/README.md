@@ -54,11 +54,10 @@ Please install these before you continue:
    * Under **Engine Versions**, click the small `+` button to add a new version.
    * Choose **5.3** or any newer 5.x version (5.3, 5.4, 5.5, 5.6, etc.).
    * Click **Install**, choose an install location, and wait for the download to finish.
-
+   ![](assets/2025-11-05-21-20-05.png)
    **Install C++ build tools for Unreal (Windows only)**
 
    Unreal C++ projects (like this demo) need Visual Studio or similar C++ tools.
-
    * Download **Visual Studio Community 2022** (free) from:  
      <https://visualstudio.microsoft.com/vs/community/>
    * Run the installer and, in the **Workloads** tab, enable:
@@ -66,10 +65,8 @@ Please install these before you continue:
    * Make sure the default optional components stay checked (Windows 10/11 SDK, C++ tools,
      and Visual Studio tools for Unreal Engine).
    * Finish the installation and reboot if requested.
-
    If you are new to Unreal, the official “Install Unreal Engine” and “Getting Started” docs
    are useful:
-
    * Install guide: <https://dev.epicgames.com/documentation/en-us/unreal-engine/install-unreal-engine>  
    * Getting started: <https://dev.epicgames.com/documentation/en-us/unreal-engine/get-started>
 

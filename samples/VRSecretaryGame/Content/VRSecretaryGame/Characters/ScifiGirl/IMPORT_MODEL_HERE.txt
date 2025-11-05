@@ -1,0 +1,36 @@
+=============================================================================
+IMPORT SCIFI GIRL MODEL HERE
+=============================================================================
+
+1. Download the model:
+   URL: https://sketchfab.com/3d-models/scifi-girl-v01-96340701c2ed4d37851c7d9109eee9c0
+   
+   Choose: GLB format, 4K textures (88MB)
+
+2. Open Unreal Editor and this project
+
+3. Navigate to this folder in Content Browser:
+   Content/VRSecretaryGame/Characters/ScifiGirl/Meshes/
+
+4. Click "Import" and select the downloaded GLB file
+
+5. Import Settings:
+   ✓ Skeletal Mesh
+   ✓ Import Mesh
+   ✓ Import Materials
+   ✓ Import Textures
+   Skeleton: Create New
+
+6. Click "Import All"
+
+7. Wait for import to complete (30-60 seconds)
+
+=============================================================================
+
+The model should now appear as:
+- SK_ScifiGirl (Skeletal Mesh)
+- Associated materials and textures
+
+You can now use it in BP_SecretaryAvatar!
+
+For full tutorial, see: README.md in project root
