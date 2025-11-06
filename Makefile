@@ -21,6 +21,8 @@
 # --- User-Configurable Variables ---
 PYTHON ?= python3.11
 VENV   ?= .venv
+# URL for PyTorch CUDA 12.6 wheels
+PYTORCH_CUDA_URL ?= https://download.pytorch.org/whl/cu126
 
 # VRSecretary backend (FastAPI) location
 BACKEND_DIR    ?= backend/gateway
@@ -112,7 +114,7 @@ DOCKER_PORT_OLLAMA ?= 11434
   docker-dev-down \
   docker-dev-logs \
   start-stack \
-  patch-plugin
+  start
 
 # =============================================================================
 #   Helper Scripts (exported env vars; expanded by the shell)
@@ -121,8 +123,8 @@ DOCKER_PORT_OLLAMA ?= 11434
 export HELP_SCRIPT
 define HELP_SCRIPT
 import re, sys, io
-print('Usage: make <target> [OPTIONS...]\\n')
-print('Available targets:\\n')
+print('Usage: make <target> [OPTIONS...]\n')
+print('Available targets:\n')
 mf = '$(firstword $(MAKEFILE_LIST))'
 with io.open(mf, 'r', encoding='utf-8', errors='ignore') as f:
     for line in f:
@@ -187,10 +189,10 @@ pip-install: venv check-pyproject ## [pip] Install root project (simple-environm
 uv-install: check-pyproject venv check-uv ## [uv] Create/sync deps INTO .venv from root pyproject.toml
 ifeq ($(OS),Windows_NT)
 
-uv-install: check-pyproject venv check-uv check-vsb ## [uv] Create/sync deps INTO .venv from root pyproject.toml
-	@echo "Syncing environment with uv into $(VENV)..."
+uv-install: check-pyproject venv check-uv check-vsb ## [uv] Create/sync [cuda, dev, lab] deps from root pyproject.toml
+	@echo "Syncing environment with uv (extras: cuda, dev, lab) into $(VENV)..."
 	@& "scripts/windows/install_vsb_win.ps1"
-	@$$env:UV_PROJECT_ENVIRONMENT = '$(VENV)'; uv sync --preview-features extra-build-dependencies
+	@$$env:UV_PROJECT_ENVIRONMENT = '$(VENV)'; uv sync --preview-features extra-build-dependencies --index-strategy unsafe-best-match --extra-index-url '$(PYTORCH_CUDA_URL)' --extra cuda --extra dev --extra lab
 	@echo "[OK] Done. To activate the environment, run:"
 	@echo "   .\\$(VENV)\\Scripts\\Activate.ps1"
 
@@ -198,8 +200,8 @@ check-vsb: ## Install Microsoft Visual C++ Build Tools (if needed)
 	@& "scripts/windows/install_vsb_win.ps1"
 else
 
-uv-install: check-pyproject venv check-uv ## [uv] Create/sync deps INTO .venv from root pyproject.toml
-	@echo "Syncing environment with uv into $(VENV)..."
+uv-install: check-pyproject venv check-uv ## [uv] Create/sync [cuda, dev, lab] deps from root pyproject.toml
+	@echo "Syncing environment with uv (extras: cuda, dev, lab) into $(VENV)..."
 	@UV_BIN=$$(command -v uv 2>$(NULL_DEVICE) || true); \
 	if [ -z "$$UV_BIN" ] && [ -x "$$HOME/.local/bin/uv" ]; then \
 		UV_BIN="$$HOME/.local/bin/uv"; \
@@ -208,7 +210,7 @@ uv-install: check-pyproject venv check-uv ## [uv] Create/sync deps INTO .venv fr
 		echo "Error: uv not found even after automatic installation. Ensure it is installed and that $$HOME/.local/bin is on your PATH."; \
 		exit 1; \
 	fi; \
-	UV_PROJECT_ENVIRONMENT=$(VENV) "$$UV_BIN" sync
+	UV_PROJECT_ENVIRONMENT=$(VENV) "$$UV_BIN" sync --preview-features extra-build-dependencies --index-strategy unsafe-best-match --extra-index-url '$(PYTORCH_CUDA_URL)' --extra cuda --extra dev --extra lab
 	@printf '%s\n' "Done. To activate the environment, run:" "   source $(VENV)/bin/activate"
 
 endif
@@ -216,20 +218,20 @@ endif
 
 update: check-pyproject ## Upgrade/sync dependencies (prefers uv if available), plus dev extras for backend
 ifeq ($(OS),Windows_NT)
-	@$$uvCmd = Get-Command uv -ErrorAction SilentlyContinue; if (-not $$uvCmd) { $$candidate = Join-Path $$env:USERPROFILE '.local\bin\uv.exe'; if (Test-Path $$candidate) { $$uvCmd = $$candidate } }; if ($$uvCmd) { if ($$uvCmd -is [System.Management.Automation.CommandInfo]) { $$uvPath = $$uvCmd.Source } else { $$uvPath = $$uvCmd }; Write-Host 'Syncing root pyproject with uv...'; $$env:UV_PROJECT_ENVIRONMENT = '$(VENV)'; & $$uvPath sync } else { Write-Host 'uv not found, falling back to pip...'; if (-not (Test-Path "$(VENV)\Scripts\python.exe")) { & $(PYTHON) -m venv '$(VENV)'; & '$(VENV)\Scripts\python.exe' -m pip install -U pip }; & '$(VENV)\Scripts\python.exe' -m pip install -U -e '.[dev]'; Write-Host 'Root project and dev dependencies upgraded (pip fallback)' }; if (Test-Path '$(BACKEND_DIR)') { Write-Host 'Updating backend/gateway (dev + watsonx extras)...'; & '$(VENV)\Scripts\python.exe' -m pip install -U -e '$(BACKEND_DIR)[dev,watsonx]' }
+	@$$uvCmd = Get-Command uv -ErrorAction SilentlyContinue; if (-not $$uvCmd) { $$candidate = Join-Path $$env:USERPROFILE '.local\bin\uv.exe'; if (Test-Path $$candidate) { $$uvCmd = $$candidate } }; if ($$uvCmd) { if ($$uvCmd -is [System.Management.Automation.CommandInfo]) { $$uvPath = $$uvCmd.Source } else { $$uvPath = $$uvCmd }; Write-Host 'Syncing root pyproject with uv (extras: cuda, dev, lab)...'; $$env:UV_PROJECT_ENVIRONMENT = '$(VENV)'; & $$uvPath sync --preview-features extra-build-dependencies --extra-index-url '$(PYTORCH_CUDA_URL)' --extra cuda --extra dev --extra lab } else { Write-Host 'uv not found, falling back to pip...'; if (-not (Test-Path "$(VENV)\Scripts\python.exe")) { & $(PYTHON) -m venv '$(VENV)'; & '$(VENV)\Scripts\python.exe' -m pip install -U pip }; & '$(VENV)\Scripts\python.exe' -m pip install -U -e '.[dev,lab,cuda]' --extra-index-url '$(PYTORCH_CUDA_URL)'; Write-Host 'Root project and dev dependencies upgraded (pip fallback)' }; if (Test-Path '$(BACKEND_DIR)') { Write-Host 'Updating backend/gateway (dev + watsonx extras)...'; & '$(VENV)\Scripts\python.exe' -m pip install -U -e '$(BACKEND_DIR)[dev,watsonx]' }
 else
 	@UV_BIN=$$(command -v uv 2>$(NULL_DEVICE) || true); \
 	if [ -z "$$UV_BIN" ] && [ -x "$$HOME/.local/bin/uv" ]; then \
 		UV_BIN="$$HOME/.local/bin/uv"; \
 	fi; \
 	if [ -n "$$UV_BIN" ]; then \
-		echo "Syncing root pyproject with uv..."; \
-		UV_PROJECT_ENVIRONMENT=$(VENV) "$$UV_BIN" sync; \
+		echo "Syncing root pyproject with uv (extras: cuda, dev, lab)..."; \
+		UV_PROJECT_ENVIRONMENT=$(VENV) "$$UV_BIN" sync --preview-features extra-build-dependencies --extra-index-url '$(PYTORCH_CUDA_URL)' --extra cuda --extra dev --extra lab; \
 	else \
 		echo "uv not found, falling back to pip..."; \
 		[ -x "$(VENV)/bin/python" ] || $(PYTHON) -m venv "$(VENV)"; \
 		"$(VENV)/bin/python" -m pip install -U pip; \
-		"$(VENV)/bin/pip" install -U -e ".[dev]"; \
+		"$(VENV)/bin/pip" install -U -e ".[dev,lab,cuda]" --extra-index-url '$(PYTORCH_CUDA_URL)'; \
 		echo "Root project and dev dependencies upgraded (pip fallback)"; \
 	fi ; \
 	if [ -d "$(BACKEND_DIR)" ]; then \
@@ -347,6 +349,17 @@ endif
 
 start-stack: install run-gateway ## Setup everything (env + Ollama + backend) and run gateway (foreground)
 
+# --- Unified start entrypoint (Windows: start.ps1, Unix: start.sh) ---
+ifeq ($(OS),Windows_NT)
+start: ## Start full VRSecretary backend stack via start.ps1 (Windows) or start.sh (Unix)
+	@Write-Host "Starting VRSecretary stack via .\start.ps1 (Windows)..."
+	@& .\start.ps1
+else
+start: ## Start full VRSecretary backend stack via start.ps1 (Windows) or start.sh (Unix)
+	@echo "Starting VRSecretary stack via ./start.sh (Unix/Linux/macOS)..."
+	@./start.sh
+endif
+
 # --- Docker (Jupyter + Ollama + simple-environment) ---
 
 build-container: check-pyproject ## Build the Jupyter+Ollama dev image with this repo
@@ -394,16 +407,6 @@ docker-dev-down: ## Stop backend dev stack
 
 docker-dev-logs: ## Tail logs from backend dev stack
 	@docker compose -f backend/docker/docker-compose.dev.yml logs -f
-
-# --- Unreal plugin patch helper (optional) ---
-
-patch-plugin: ## Apply VRSecretary Unreal plugin patch (if tools/scripts/apply_vrsecretary_patch.sh exists)
-	@if [ -x "tools/scripts/apply_vrsecretary_patch.sh" ]; then \
-		echo "Applying VRSecretary plugin patch..."; \
-		bash tools/scripts/apply_vrsecretary_patch.sh "$(PWD)"; \
-	else \
-		echo "Warning: tools/scripts/apply_vrsecretary_patch.sh not found or not executable. Skipping."; \
-	fi
 
 # --- Development and QA (Python) ---
 
@@ -509,7 +512,7 @@ check-uv: ## Check for uv and install it if missing
 			UV_BIN="$$HOME/.local/bin/uv"; \
 		else \
 			UV_BIN=$$(command -v uv >$(NULL_DEVICE) 2>&1 || echo ""); \
-		fi; \
+		}; \
 	fi; \
 	if [ -z "$$UV_BIN" ]; then \
 		echo "Error: 'uv' is still not available after installation."; \

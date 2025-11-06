@@ -21,7 +21,6 @@ Configuration (env vars):
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import logging
 import os
@@ -72,9 +71,7 @@ def _post_json(path: str, json: dict, timeout: Optional[float] = None) -> httpx.
     try:
         resp = client.post(path, json=json)
     except httpx.HTTPError as exc:
-        raise ChatterboxTtsError(
-            f"Error calling Chatterbox at {CHATTERBOX_URL}{path}: {exc}"
-        ) from exc
+        raise ChatterboxTtsError(f"Error calling Chatterbox at {CHATTERBOX_URL}{path}: {exc}") from exc
     finally:
         client.close()
 
@@ -99,7 +96,7 @@ def _post_json(path: str, json: dict, timeout: Optional[float] = None) -> httpx.
 
 
 # ---------------------------------------------------------------------------
-# Synchronous public API
+# Public API
 # ---------------------------------------------------------------------------
 
 
@@ -118,6 +115,33 @@ def tts_wav_bytes(
 
     This uses the non-streaming endpoint `/v1/audio/speech` with `stream=false`,
     so the entire input is converted into ONE audio clip.
+
+    Parameters
+    ----------
+    text : str
+        Text to synthesize.
+    voice : {"female", "male", "neutral"}
+        Voice profile to use. "neutral" means no voice cloning.
+    temperature : float
+        Sampling temperature (0.1–1.5).
+    cfg_weight : float
+        Guidance weight (0.0–1.0).
+    exaggeration : float
+        Expressiveness level (0.0–1.0).
+    speed : float
+        Playback speed multiplier (0.5–2.0).
+    timeout : float, optional
+        Request timeout in seconds. Defaults to CHATTERBOX_TIMEOUT.
+
+    Returns
+    -------
+    bytes
+        Raw WAV bytes (ready to base64-encode or write to a .wav file).
+
+    Raises
+    ------
+    ChatterboxTtsError
+        If the TTS server is unreachable or returns an error.
     """
     if not text or not text.strip():
         raise ValueError("tts_wav_bytes: text must be non-empty")
@@ -133,8 +157,8 @@ def tts_wav_bytes(
         # IMPORTANT: force non-streaming mode
         "stream": False,
 
-        # Chunking flags are ignored in non-streaming mode, but we set them
-        # explicitly for clarity.
+        # We can leave chunking flags at defaults for non-streaming. They are
+        # ignored in synthesize(), but we set them explicitly for clarity.
         "chunk_by_sentences": False,
         "max_chunk_words": None,
         "max_chunk_sentences": None,
@@ -164,8 +188,22 @@ def tts_wav_base64(
     """
     Synthesize `text` to WAV and return a base64-encoded string.
 
-    This is convenient for building the `/api/vr_chat` response for Unreal,
-    since the plugin expects `audio_wav_base64` in the JSON.
+    This is the most convenient function to call from your FastAPI route
+    that builds the `/api/vr_chat` response for Unreal, since the plugin
+    expects `audio_wav_base64` in the JSON.
+
+    Example
+    -------
+    >>> audio_b64 = tts_wav_base64("Hello from Ailey.")
+    >>> response = {
+    ...     "assistant_text": "Hello from Ailey.",
+    ...     "audio_wav_base64": audio_b64,
+    ... }
+
+    Returns
+    -------
+    str
+        Base64-encoded WAV audio (ASCII string).
     """
     wav = tts_wav_bytes(
         text,
@@ -182,74 +220,31 @@ def tts_wav_base64(
 def chatterbox_health(timeout: Optional[float] = None) -> dict:
     """
     Call the /health endpoint of the Chatterbox server.
+
+    Returns
+    -------
+    dict
+        Parsed JSON payload from /health, e.g.:
+
+        {
+          "status": "ready",
+          "device": "cuda",
+          "model_ready": true,
+          "voices_loaded": {
+            "female": true,
+            "male": false
+          },
+          "active_requests": 0
+        }
+
+    Raises
+    ------
+    ChatterboxTtsError
+        If the server is unreachable or returns an error.
     """
     logger.debug("Calling Chatterbox health at %s/health", CHATTERBOX_URL)
     resp = _post_json("/health", json={}, timeout=timeout)
     try:
         return resp.json()
     except Exception as exc:
-        raise ChatterboxTtsError(
-            f"Failed to parse Chatterbox /health response: {exc}"
-        ) from exc
-
-
-# ---------------------------------------------------------------------------
-# Async wrappers (for FastAPI)
-# ---------------------------------------------------------------------------
-
-
-async def tts_wav_bytes_async(
-    text: str,
-    *,
-    voice: VoiceType = DEFAULT_VOICE,
-    temperature: float = 0.7,
-    cfg_weight: float = 0.4,
-    exaggeration: float = 0.3,
-    speed: float = 1.0,
-    timeout: Optional[float] = None,
-) -> bytes:
-    """
-    Async wrapper around `tts_wav_bytes` (runs in a worker thread).
-    """
-    return await asyncio.to_thread(
-        tts_wav_bytes,
-        text,
-        voice=voice,
-        temperature=temperature,
-        cfg_weight=cfg_weight,
-        exaggeration=exaggeration,
-        speed=speed,
-        timeout=timeout,
-    )
-
-
-async def tts_wav_base64_async(
-    text: str,
-    *,
-    voice: VoiceType = DEFAULT_VOICE,
-    temperature: float = 0.7,
-    cfg_weight: float = 0.4,
-    exaggeration: float = 0.3,
-    speed: float = 1.0,
-    timeout: Optional[float] = None,
-) -> str:
-    """
-    Async wrapper around `tts_wav_base64` (runs in a worker thread).
-    """
-    return await asyncio.to_thread(
-        tts_wav_base64,
-        text,
-        voice=voice,
-        temperature=temperature,
-        cfg_weight=cfg_weight,
-        exaggeration=exaggeration,
-        speed=speed,
-        timeout=timeout,
-    )
-
-
-async def chatterbox_health_async(timeout: Optional[float] = None) -> dict:
-    """
-    Async wrapper around `chatterbox_health` (runs in a worker thread).
-    """
-    return await asyncio.to_thread(chatterbox_health, timeout=timeout)
+        raise ChatterboxTtsError(f"Failed to parse Chatterbox /health response: {exc}") from exc

@@ -15,4 +15,4 @@ public:
     }
 };
 
-IMPLEMENT_MODULE(FVRSecretaryModule, VRSecretary)
+IMPLEMENT_MODULE(FVRSecretaryModule, VRSecretary);

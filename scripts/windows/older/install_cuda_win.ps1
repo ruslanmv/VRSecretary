@@ -7,23 +7,23 @@
 #   - Check if torch already has CUDA support; if yes, do nothing.
 #   - Upgrade pip/setuptools/wheel from the *normal* PyPI index.
 #   - Uninstall any existing torch/torchvision/torchaudio.
-#   - Install pinned CUDA wheels for cu126:
-#       torch==2.6.0+cu126
-#       torchvision==0.21.0+cu126
-#       torchaudio==2.6.0+cu126
+#   - Install pinned CUDA wheels for cu121:
+#       torch==2.5.1+cu121
+#       torchvision==0.20.1+cu121
+#       torchaudio==2.5.1+cu121
 
 $ErrorActionPreference = "Stop"
 
-# ----------------- Pinned versions that EXIST on cu126 -----------------
+# ----------------- Pinned versions that EXIST on cu121 -----------------
 
-# These are the latest torch 2.6.x CUDA 12.6 wheels as of now.
+# These are the latest torch 2.5.x CUDA 12.1 wheels as of now.
 # If PyTorch changes their CUDA support, you might have to update them.
-$TORCH_VERSION       = "2.6.0+cu126"
-$TORCHVISION_VERSION = "0.21.0+cu126"
-$TORCHAUDIO_VERSION  = "2.6.0+cu126"
+$TORCH_VERSION       = "2.5.1+cu121"
+$TORCHVISION_VERSION = "0.20.1+cu121"
+$TORCHAUDIO_VERSION  = "2.5.1+cu121"
 
-# CUDA wheels index for PyTorch cu126
-$CUDA_INDEX_URL = "https://download.pytorch.org/whl/cu126"
+# CUDA wheels index for PyTorch cu121
+$CUDA_INDEX_URL = "https://download.pytorch.org/whl/cu121"
 
 # Ensure TLS 1.2 for downloads on older .NET
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}

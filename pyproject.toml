@@ -34,6 +34,7 @@ dependencies = [
   # --- Added Dependencies for ASGI/Web Server ---
   "uvicorn[standard]>=0.38.0",
   "httptools>=0.7.1",
+  "pydantic-settings",                              # correct package name
   # ----------------------------------------------
 
   # --- TTS stack: versions aligned with chatterbox-tts 0.1.4's ecosystem ---
@@ -60,6 +61,15 @@ lab = [
 
 # Install this extra when you *have* a CUDA GPU and want the Torch stack.
 # CPU-only installs can ignore this.
+#
+# With uv + Makefile:
+#   uv sync --extra cuda --extra dev --extra lab \
+#     --extra-index-url https://download.pytorch.org/whl/cu126 \
+#     --index-strategy unsafe-best-match
+#
+# With plain pip:
+#   pip install ".[cuda]" --extra-index-url https://download.pytorch.org/whl/cu126
+#
 cuda = [
   "torch",
   "torchvision",

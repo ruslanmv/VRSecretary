@@ -1,459 +1,572 @@
 # VRSecretary Unreal Plugin
 
-The **VRSecretary** Unreal plugin connects your UE5 project to AI backends
-(Ollama / watsonx via a FastAPI gateway, or directly to an OpenAI-style
-Ollama endpoint, plus fully local llama.cpp via the **Llama-Unreal** plugin).
+**Path in repo:** `engine-plugins/unreal/VRSecretary/`
 
-It exposes a single Blueprint-friendly component you can drop onto any Actor
-and start sending/receiving AI messages.
+This plugin is the Unreal Engine side of the VRSecretary project.  
+It gives you a single Blueprint-friendly component that can talk to:
 
-This README covers only the Unreal plugin located at:
+- A **FastAPI gateway** (VRSecretary backend) → Ollama / watsonx.ai → Chatterbox TTS  
+- A **Direct Ollama** OpenAI-style HTTP endpoint (text only)  
+- A future **Local Llama.cpp** integration (currently a stub that falls back to the gateway)
 
-`engine-plugins/unreal/VRSecretary/`
+You attach the component to any Actor and send user text; the plugin calls the
+configured backend and fires Blueprint events with the assistant’s reply.
+
+This README is **only** about the Unreal plugin. See the root project README
+for backend setup and VR sample project details.
 
 ---
 
 ## 1. Prerequisites
 
-Before using the plugin, make sure you have:
+Before using the plugin, you should have:
 
 - **Unreal Engine 5.3+**
-- A **C++ project** (or a Blueprint project converted to C++)
-- At least one AI backend running:
+- A **C++ Unreal project** (or a Blueprint project converted to C++)
+- At least one LLM backend running:
 
-  **Option A – Gateway (recommended for full text+audio)**  
-  - FastAPI gateway:  
-    `uvicorn vrsecretary_gateway.main:app --host 0.0.0.0 --port 8000`  
-  - Ollama server (local LLM)  
-  - Chatterbox TTS (for audio synthesis)
+### Option A – FastAPI Gateway (recommended: text + audio)
 
-  **Option B – Direct Ollama (no Python gateway, text only)**  
-  - An OpenAI-compatible endpoint (e.g. Ollama with an OpenAI-style proxy) exposed at  
-    `http://localhost:11434/v1/chat/completions`
+- VRSecretary FastAPI gateway running, for example:
 
-  **Option C – Local Llama.cpp (in-engine)**  
-  - The **Llama-Unreal** plugin (`Llama` with `LlamaCore` module) installed and enabled
-  - A GGUF model configured on a `ULlamaComponent` in your project
+  ```bash
+  cd backend/gateway
+  uvicorn vrsecretary_gateway.main:app --host 0.0.0.0 --port 8000
+```
+
+* **Ollama** server for the LLM:
+
+  * `ollama serve`
+  * `ollama pull llama3` (or your preferred model)
+
+* **Chatterbox TTS** for speech:
+
+  * `chatterbox-server --port 4123`
+
+The gateway exposes:
+
+* `POST /api/vr_chat` → `{ assistant_text, audio_wav_base64 }`
+
+### Option B – Direct Ollama (text only)
+
+* An OpenAI-style `/v1/chat/completions` endpoint reachable from Unreal.
+  Typical setup:
+
+  ```text
+  http://localhost:11434/v1/chat/completions
+  ```
+
+This is often Ollama behind a small HTTP proxy that mimics OpenAI Chat
+Completions (many exist, or you can write one).
+
+### Option C – Local Llama.cpp (stub for now)
+
+The plugin defines a **LocalLlamaCpp** backend mode, but in the current version:
+
+* `LocalLlamaCpp` simply logs a warning and **falls back to Gateway**.
+* There is **no hard dependency** on any extra plugins (like Llama-Unreal) so
+  the plugin compiles everywhere.
+
+If you want a true in-engine llama.cpp, you can:
+
+* Bring in Llama-Unreal (or your own llama.cpp wrapper)
+* Replace the stub in `SendViaLocalLlamaCpp` and wire in your C++ calls
+* Optionally use `ThirdParty/LlamaCpp/` to store headers/libs
+
+See `ThirdParty/LlamaCpp/README.txt` for notes.
 
 ---
 
-## 2. Installing the Plugin into Your Project
+## 2. Installing the Plugin into a Project
 
-1. **Copy the plugin folder into your project**
+### 2.1 Copy or link the plugin into your project
 
-   From the VRSecretary repo:
+From the repo root:
 
-   ```bash
-   cd /path/to/VRSecretary
-   mkdir -p /path/to/YourUnrealProject/Plugins
-   cp -r engine-plugins/unreal/VRSecretary /path/to/YourUnrealProject/Plugins/
-   ```
+```bash
+cd C:\workspace\VRSecretary   # adjust to your path
+```
 
-2. **(Optional) Install Llama-Unreal for LocalLlamaCpp**
+**Option 1 – Copy (simple):**
 
-   * Install the **Llama** plugin (Llama-Unreal) into your engine or your project’s `Plugins`.
-   * Make sure the plugin defines the `LlamaCore` module (used by VRSecretary).
+```bash
+mkdir -p samples\VRSecretaryGame\Plugins
+xcopy /E /I engine-plugins\unreal\VRSecretary samples\VRSecretaryGame\Plugins\VRSecretary
+```
 
-3. **Regenerate project files**
+**Option 2 – Junction (so you keep a single source of truth):**
 
-   * Right-click your `.uproject` → **Generate Visual Studio project files**
+```cmd
+cd C:\workspace\VRSecretary
+rmdir /S /Q samples\VRSecretaryGame\Plugins\VRSecretary  2>NUL
+mklink /J "samples\VRSecretaryGame\Plugins\VRSecretary" "engine-plugins\unreal\VRSecretary"
+```
 
-4. **Build the project**
+(adjust paths if you’re using a different project).
 
-   * Open the generated `.sln` in Visual Studio
-   * Build in **Development Editor** for **Win64**
+> Any Unreal project that has `Plugins\VRSecretary\` under its root will see
+> and build the plugin.
 
-5. **Enable the plugins**
+### 2.2 Regenerate project files
 
-   * Open your project in UE
-   * Go to **Edit → Plugins**
-   * Search for **VRSecretary** and ensure it is **enabled**
-   * If using LocalLlamaCpp, also enable **Llama**
+In Windows Explorer:
 
-   Restart the editor if prompted.
+1. Right-click your `.uproject` (e.g. `VRSecretaryGame.uproject`)
+2. Choose **Generate Visual Studio project files**
+
+### 2.3 Build in Visual Studio
+
+1. Open the generated `.sln` (e.g. `VRSecretaryGame.sln`)
+2. Top toolbar:
+
+   * **Solution Configuration:** `Development Editor`
+   * **Solution Platform:** `Win64`
+3. Menu → **Build → Build Solution**
+
+If the build finishes with **0 errors**, the plugin is compiled and ready.
+
+### 2.4 Enable the plugin in Unreal
+
+1. Launch Unreal by double-clicking your `.uproject`.
+2. Go to **Edit → Plugins**
+3. Search for **VRSecretary**.
+4. Make sure it’s **enabled**.
+5. Restart Unreal if asked.
 
 ---
 
-## 3. Configuring the Plugin (Project Settings)
+## 3. Plugin Settings (Project-Wide)
 
 Open:
 
 > **Edit → Project Settings → Plugins → VRSecretary**
 
-You’ll see these settings (backed by `UVRSecretarySettings`):
+These settings are implemented by `UVRSecretarySettings`.
 
-### 3.1 Gateway URL
+### 3.1 Backend Mode
 
-**Gateway URL**
-Base URL of the FastAPI gateway:
-
-* Example: `http://localhost:8000`
-
-Used when `Backend Mode` is set to one of the **Gateway** modes.
-
-### 3.2 Backend Mode (`EVRSecretaryBackendMode`)
-
-**Backend Mode** – global default for all `VRSecretaryComponent` instances:
+**Backend Mode** (`EVRSecretaryBackendMode`):
 
 * **Gateway (Ollama)**
-  UE → Gateway → Ollama → Chatterbox TTS
-  Returns **text + base64-encoded audio**.
+  UE → FastAPI gateway → Ollama → Chatterbox
+  Returns `assistant_text` + `audio_wav_base64` (speech).
 
 * **Gateway (watsonx.ai)**
-  UE → Gateway → IBM watsonx.ai → Chatterbox TTS
-  Returns **text + base64-encoded audio**.
+  UE → FastAPI gateway → IBM watsonx.ai → Chatterbox
+  Same return shape as above.
 
-* **DirectOllama**
-  UE → OpenAI-style `/v1/chat/completions` endpoint (e.g. Ollama proxy)
-  Returns **text only** (no audio).
+* **Direct Ollama**
+  UE → OpenAI-style `/v1/chat/completions` endpoint
+  Returns text only (no audio).
 
-* **LocalLlamaCpp**
-  UE → `ULlamaComponent` (Llama-Unreal) → local llama.cpp model
-  Returns **text only** (no audio by default).
+* **Local Llama.cpp (stub)**
+  Currently logs a warning and calls the **Gateway** mode under the hood.
 
-Components can override this global mode per instance.
+This is the **global default** for every `VRSecretaryComponent` unless they
+explicitly override it.
+
+### 3.2 Gateway URL
+
+**Gateway URL**
+
+* Base URL for the FastAPI gateway.
+* Example: `http://localhost:8000`
+
+Used when the effective backend mode is a **Gateway** mode.
 
 ### 3.3 HTTP Timeout
 
-**HTTP Timeout**
-Default HTTP request timeout (seconds) for Gateway and DirectOllama calls.
+**HTTP Timeout** (seconds)
 
-* Example: `60.0`
+* Default: `60.0`
+* Used for both Gateway and DirectOllama HTTP requests.
 
 ### 3.4 Direct Ollama URL / Model
 
-Used when `Backend Mode` is **DirectOllama**:
+Only used when the effective backend mode is **DirectOllama**:
 
 * **Direct Ollama URL**
-  Base URL of your OpenAI-style endpoint.
   Example: `http://localhost:11434`
-
-  The plugin calls `${DirectOllamaUrl}/v1/chat/completions`.
+  The plugin calls `DirectOllamaUrl + "/v1/chat/completions"`.
 
 * **Direct Ollama Model**
-  Default model name to send in the JSON payload.
   Example: `llama3`
+  Sent as the `"model"` field in the JSON payload.
 
 ---
 
-## 4. VRSecretary Component (Blueprint / C++)
+## 4. Core Types & Component
 
-The main entry point is:
+### 4.1 Chat Config (sampling settings)
 
-* C++: `UVRSecretaryComponent`
-* Blueprint class: **VRSecretaryComponent**
+`FVRSecretaryChatConfig` is defined in `VRSecretaryChatTypes.h`:
 
-### 4.1. Adding the Component to an Actor
+```cpp
+USTRUCT(BlueprintType)
+struct FVRSecretaryChatConfig
+{
+    GENERATED_BODY()
 
-1. Open or create a Blueprint (e.g. `BP_VRSecretaryManager` or your VR Pawn).
-2. Click **Add Component** → search for **VRSecretaryComponent**.
-3. Select it and configure in the **Details** panel:
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
+    float Temperature = 0.7f;
 
-   * **Override Backend Mode** (bool, `bOverrideBackendMode`):
-     If checked, this component uses its own backend mode instead of the global default.
-   * **Backend Mode** (enum, `BackendMode`):
-     Per-component override value (same options as the global setting).
-   * **Default Chat Config** (`FVRSecretaryChatConfig`):
-     Per-component default for temperature, max tokens, etc.
-   * **Llama Component** (`ULlamaComponent*`):
-     Optional reference to a `ULlamaComponent` used when Backend Mode == `LocalLlamaCpp`.
-     If not set, the component will try to auto-discover a `ULlamaComponent` on the same Actor at runtime.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
+    float TopP = 0.9f;
 
-### 4.2. Events
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
+    int32 MaxTokens = 256;
+};
+```
 
-`VRSecretaryComponent` exposes two Blueprint multicast events:
+You pass an instance of this struct when sending user text.
 
-* **OnAssistantResponse(AssistantText, AudioBase64)**
+### 4.2 Delegates (events)
 
-  * `AssistantText` – AI’s text reply.
-  * `AudioBase64` – base64-encoded WAV audio:
+Also in `VRSecretaryChatTypes.h`:
 
-    * Non-empty in **Gateway** modes (if TTS succeeded).
-    * Empty string in **DirectOllama** and **LocalLlamaCpp** modes.
+```cpp
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+    FVRSecretaryOnAssistantResponse,
+    const FString&, AssistantText,
+    const FString&, AudioWavBase64
+);
 
-* **OnError(ErrorMessage)**
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FVRSecretaryOnError,
+    const FString&, ErrorMessage
+);
+```
 
-  * Fired when HTTP/JSON errors occur, or other backend issues arise.
+* `OnAssistantResponse` fires when we get a valid reply.
+* `OnError` fires for HTTP / JSON / mode errors.
+
+### 4.3 VRSecretaryComponent
+
+`VRSecretaryComponent` lives in:
+
+* Header: `Source/VRSecretary/Public/VRSecretaryComponent.h`
+* Source: `Source/VRSecretary/Private/VRSecretaryComponent.cpp`
+
+Key properties and methods:
+
+```cpp
+UCLASS(ClassGroup=(VRSecretary), meta=(BlueprintSpawnableComponent))
+class VRSECRETARY_API UVRSecretaryComponent : public UActorComponent
+{
+    GENERATED_BODY()
+
+public:
+    UVRSecretaryComponent();
+
+    // Optional per-component override. By default, it is GatewayOllama.
+    // If you set this to something else, that mode is used for this component.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
+    EVRSecretaryBackendMode BackendModeOverride;
+
+    // Optional session ID, otherwise a GUID is generated on BeginPlay.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
+    FString SessionId;
+
+    // Fired on successful response
+    UPROPERTY(BlueprintAssignable, Category="VRSecretary")
+    FVRSecretaryOnAssistantResponse OnAssistantResponse;
+
+    // Fired on error
+    UPROPERTY(BlueprintAssignable, Category="VRSecretary")
+    FVRSecretaryOnError OnError;
+
+    // Main call to send text to the configured backend
+    UFUNCTION(BlueprintCallable, Category="VRSecretary")
+    void SendUserText(const FString& UserText, const FVRSecretaryChatConfig& Config);
+
+protected:
+    virtual void BeginPlay() override;
+
+private:
+    const UVRSecretarySettings* Settings;
+
+    void EnsureSessionId();
+
+    void SendViaGateway(const FString& UserText);
+    void SendViaDirectOllama(const FString& UserText, const FVRSecretaryChatConfig& Config);
+    void SendViaLocalLlamaCpp(const FString& UserText, const FVRSecretaryChatConfig& Config);
+
+    void HandleGatewayResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
+    void HandleDirectOllamaResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
+};
+```
+
+---
+
+## 5. Using the Component in Blueprints
+
+### 5.1 Add the component
+
+1. Open (or create) a Blueprint, e.g. your VR pawn or a manager actor:
+
+   * `BP_VRSecretaryManager`, `BP_VRPawn`, etc.
+
+2. Click **Add** in the Components panel.
+
+3. Search for **VRSecretaryComponent** and add it.
+
+### 5.2 Configure the component
+
+Select the `VRSecretaryComponent` in the **Details** panel:
+
+* **Backend Mode Override**
+
+  * Default value: `GatewayOllama`.
+  * If you want to use the **project-wide** setting, leave this at `GatewayOllama`.
+  * If you want this component to use a different backend, change it to:
+
+    * `GatewayWatsonx`, or
+    * `DirectOllama`, or
+    * `LocalLlamaCpp` (stub; falls back to gateway).
+
+* **Session Id**
+
+  * Optional; if empty the component generates a new GUID at `BeginPlay`.
+  * If you want cross-session continuity on the backend, you can set a custom ID.
+
+### 5.3 Bind to events
 
 In the Blueprint Event Graph:
 
-1. Select the **VRSecretaryComponent** on your Actor.
-2. Right-click in the graph → search for **Assign OnAssistantResponse**.
-3. Same for **Assign OnError**.
-4. Implement your logic (update subtitles, play audio, show error messages, etc.).
+1. Select the `VRSecretaryComponent` in the Components list.
+2. Right-click in the Event Graph and search for:
 
-### 4.3. Sending Text to the AI
+   * **Assign On Assistant Response**
+   * **Assign On Error**
+3. Add both event nodes and hook them up to your UI / audio logic:
 
-The primary call is:
+   * **OnAssistantResponse:**
 
-```cpp
-UFUNCTION(BlueprintCallable, Category="VRSecretary")
-void SendUserText(const FString& UserText, const FVRSecretaryChatConfig& Config);
-```
+     * Use `AssistantText` to update a 3D widget, subtitles, or debug logs.
+     * If `AudioWavBase64` is non-empty (Gateway modes):
 
-There is also a convenience function in C++:
+       * Decode base64 to bytes (e.g. with a runtime audio importer plugin).
+       * Play the decoded sound at your avatar’s head or attached audio component.
 
-```cpp
-UFUNCTION(BlueprintCallable, Category="VRSecretary")
-void SendUserTextWithDefaultConfig(const FString& UserText);
-```
+   * **OnError:**
 
-In Blueprint:
+     * Print to screen / log.
+     * Optionally show an on-screen error panel.
 
-1. Create a variable of type **VRSecretaryChatConfig** (struct) or use the **Default Chat Config** on the component.
+### 5.4 Sending a message from Blueprint
 
-2. Set fields as needed:
+To send the user’s text:
 
-   * `Temperature` (e.g. 0.7)
-   * `TopP` (e.g. 1.0)
-   * `MaxTokens` (e.g. 256)
-   * `PresencePenalty` / `FrequencyPenalty` (often 0.0 initially)
+1. Create or reuse a `FVRSecretaryChatConfig` variable:
 
-3. From your input logic (e.g. button press, VR UI):
+   * e.g. `ChatConfig`
+   * Set `Temperature`, `TopP`, `MaxTokens` as desired.
 
-   * Call `SendUserText(UserText, ChatConfig)` or `SendUserTextWithDefaultConfig(UserText)`.
+2. From your input event (button, VR trigger, UI button):
 
-The call returns immediately; the response arrives asynchronously via **OnAssistantResponse**.
+   * Read the text from your widget (e.g. `EditableTextBox`).
+   * Call:
 
----
+     * **Send User Text** with:
 
-## 5. Backend Modes – Behavior Details
+       * `UserText` = string from the widget.
+       * `Config`   = your `ChatConfig` struct.
 
-### 5.1. Gateway (Ollama / watsonx.ai)
-
-**Flow:**
-
-1. VRSecretaryComponent builds a JSON body:
-
-   ```json
-   {
-     "session_id": "<GUID generated at BeginPlay>",
-     "user_text": "<UserText>"
-   }
-   ```
-
-2. Sends `POST {GatewayUrl}/api/vr_chat`.
-
-3. The FastAPI gateway:
-
-   * Adds the Ailey system prompt (persona).
-   * Appends the user text and any prior history for this `session_id`.
-   * Routes to Ollama **or** watsonx.ai depending on backend mode.
-   * Calls Chatterbox TTS with the assistant’s reply to obtain WAV audio.
-   * Returns:
-
-     ```json
-     {
-       "assistant_text": "...",
-       "audio_wav_base64": "UklGRiQAAABXQVZF..."
-     }
-     ```
-
-4. The plugin parses the JSON and fires:
-
-   * `OnAssistantResponse(AssistantText, AudioBase64)`.
-
-**Good for:**
-
-* Full text + voice experience.
-* Centralized persona and history management.
-* Flexibility to change LLM provider or add RAG/tools in Python without changing UE.
-
-### 5.2. DirectOllama (OpenAI-style HTTP)
-
-**Flow:**
-
-1. VRSecretaryComponent builds a minimal OpenAI-style request:
-
-   ```json
-   {
-     "model": "<DirectOllamaModel>",
-     "messages": [
-       { "role": "user", "content": "<UserText>" }
-     ],
-     "temperature": <Config.Temperature>,
-     "top_p": <Config.TopP>,
-     "presence_penalty": <Config.PresencePenalty>,
-     "frequency_penalty": <Config.FrequencyPenalty>,
-     "max_tokens": <Config.MaxTokens>
-   }
-   ```
-
-   > Note: if you want a system prompt / persona **in DirectOllama mode**, you can
-   > either add that in your upstream proxy, or extend the plugin to include a
-   > system message here.
-
-2. Sends `POST {DirectOllamaUrl}/v1/chat/completions`.
-
-3. Expects a response compatible with OpenAI Chat Completions:
-
-   ```json
-   {
-     "choices": [
-       {
-         "message": {
-           "role": "assistant",
-           "content": "..."
-         }
-       }
-     ]
-   }
-   ```
-
-4. It extracts `choices[0].message.content` and fires:
-
-   * `OnAssistantResponse(AssistantText, "")` (no audio).
-
-**Good for:**
-
-* Very simple deployments (no Python if you don’t want it).
-* Direct experimentation with local models (text-only).
-* Consistent with the gateway’s OpenAI-style LLM API.
-
-### 5.3. LocalLlamaCpp (via Llama-Unreal)
-
-**Flow:**
-
-1. In LocalLlamaCpp mode, `SendUserText` calls `SendViaLocalLlamaCpp`.
-
-2. The component locates a `ULlamaComponent`:
-
-   * Uses the explicit **Llama Component** reference if set, or
-   * Auto-discovers a `ULlamaComponent` on the same Actor (`GetOwner()->FindComponentByClass<ULlamaComponent>()`).
-
-3. It binds to `LlamaComponent->OnResponseGenerated` and sends a `FLlamaChatPrompt`:
-
-   ```cpp
-   FLlamaChatPrompt Prompt;
-   Prompt.Prompt           = UserText;
-   Prompt.Role             = EChatTemplateRole::User;
-   Prompt.bAddAssistantBOS = true;
-   Prompt.bGenerateReply   = true;
-
-   LlamaComponent->InsertTemplatedPromptStruct(Prompt);
-   ```
-
-4. When Llama-Unreal finishes generating a reply, it triggers its own delegate,
-   which flows into `HandleLlamaResponse` on `VRSecretaryComponent`:
-
-   * `OnAssistantResponse(AssistantText, "")` (no audio).
-
-**Setup notes:**
-
-* Make sure the **Llama plugin** is installed and enabled (Llama-Unreal).
-
-* On the same Actor as `VRSecretaryComponent`:
-
-  1. Add a **LlamaComponent**.
-  2. Configure it with:
-
-     * Path to your GGUF model.
-     * System prompt / context length as needed.
-  3. Call its `LoadModel()` at startup (BeginPlay or similar).
-
-* Alternatively, assign the `LlamaComponent` reference directly in the
-  `VRSecretaryComponent` details panel.
-
-**Good for:**
-
-* Completely offline, in-process LLM.
-* No external HTTP for generation.
-* Full control over llama.cpp configuration from Unreal.
+The call returns instantly. When the backend responds, `OnAssistantResponse` fires.
 
 ---
 
-## 6. Typical Blueprints (Gateway Mode Example)
+## 6. Backend Mode Details
 
-A minimal setup in a Blueprint (e.g. `BP_VRSecretaryManager`):
+### 6.1 Gateway (Ollama / watsonx.ai)
 
-1. **Components**
+**What it does:**
 
-   * `VRSecretaryComponent`
+* Builds JSON:
 
-2. **Events**
+  ```json
+  {
+    "session_id": "<SessionId or GUID>",
+    "user_text": "<UserText>"
+  }
+  ```
 
-   * On `Event BeginPlay`:
+* Calls:
 
-     * (Optional) Do a quick health check to the backend or show a “Connecting…” UI.
+  ```text
+  POST {GatewayUrl}/api/vr_chat
+  ```
 
-   * On a UI or input event (button / VR controller):
+* Expects a response:
 
-     * Get user text from your widget.
-     * Call `SendUserTextWithDefaultConfig(UserText)` on `VRSecretaryComponent`.
+  ```json
+  {
+    "assistant_text": "Hi, I'm Ailey...",
+    "audio_wav_base64": "UklGRiQAAABXQVZF..."
+  }
+  ```
 
-   * `OnAssistantResponse`:
+* On success:
 
-     * Update subtitles widget with `AssistantText`.
-     * If `AudioBase64` is not empty:
+  * Fires `OnAssistantResponse(AssistantText, AudioBase64)`.
 
-       * Decode base64 → WAV bytes (e.g. using a Runtime Audio Importer plugin).
-       * Play sound at the avatar’s location.
+**When to use:**
 
-   * `OnError`:
+* You want **speech** out of the box (audio_wav_base64).
+* You want persona & history handled in Python.
+* You want to swap LLM providers (Ollama, watsonx.ai, etc.) without touching Unreal.
 
-     * Print error to log + optionally show message in UI.
+### 6.2 DirectOllama (text only)
 
-3. **Project Settings**
+**What it does:**
 
-   * Plugin → VRSecretary:
+* Builds OpenAI-style payload:
 
-     * `Gateway URL` = `http://localhost:8000`
-     * `Backend Mode` = Gateway (Ollama)
-     * `HTTP Timeout` ~ 60s
+  ```json
+  {
+    "model": "<DirectOllamaModel>",
+    "messages": [
+      { "role": "system", "content": "You are Ailey, a helpful VR secretary inside a virtual office." },
+      { "role": "user", "content": "<UserText>" }
+    ],
+    "temperature": <Config.Temperature>,
+    "top_p": <Config.TopP>,
+    "max_tokens": <Config.MaxTokens>,
+    "stream": false
+  }
+  ```
+
+* Calls:
+
+  ```text
+  POST {DirectOllamaUrl}/v1/chat/completions
+  ```
+
+* Expects:
+
+  ```json
+  {
+    "choices": [
+      {
+        "message": {
+          "role": "assistant",
+          "content": "..."
+        }
+      }
+    ]
+  }
+  ```
+
+* On success:
+
+  * Extracts `choices[0].message.content` and fires `OnAssistantResponse(Text, "")`.
+
+**When to use:**
+
+* You don’t want Python.
+* You just need **text** replies.
+* You already have or can deploy an OpenAI-style Ollama endpoint.
+
+### 6.3 LocalLlamaCpp (stub)
+
+In the current plugin:
+
+* `SendViaLocalLlamaCpp` simply logs:
+
+  > `LocalLlamaCpp backend is not wired yet; falling back to Gateway.`
+
+* Then internally calls `SendViaGateway`.
+
+The idea is:
+
+* You or a future version of the project can integrate real llama.cpp here.
+* The plugin already sets up the enum and call site so gameplay code doesn’t change.
+
+See `ThirdParty/LlamaCpp/README.txt` for guidance if you want to implement
+native llama.cpp.
 
 ---
 
 ## 7. Troubleshooting
 
-**Plugin fails to compile**
+### “VRSecretary module could not be found” / plugin doesn’t compile
 
-* Confirm you ran `apply_vrsecretary_patch.sh` after cloning the repo.
-* Make sure the `VRSecretary` folder inside your project matches the patched version.
-* If using LocalLlamaCpp:
+Check:
 
-  * Ensure the **Llama** plugin (Llama-Unreal) is installed and enabled.
-  * The VRSecretary module depends on `LlamaCore`; missing this will cause linker errors.
+1. Folder structure:
 
-**Gateway mode: errors / no response**
+   ```text
+   YourProject/
+     Plugins/
+       VRSecretary/
+         VRSecretary.uplugin
+         Source/VRSecretary/...
+   ```
 
-* Check FastAPI logs for exceptions.
-* Ensure:
+2. You regenerated project files after copying the plugin.
 
-  * `MODE` in `.env` is set correctly (`offline_local_ollama` or `online_watsonx`).
-  * `OLLAMA_BASE_URL` and `CHATTERBOX_URL` are reachable from the gateway.
-  * `/api/vr_chat` works via `curl` (see root README).
+3. You are building **Development Editor** | **Win64**.
 
-**DirectOllama: “choices[0] missing” or JSON parse errors**
+If you still have errors, look at the first red C++ error in Visual Studio’s
+**Error List** and adjust accordingly (or paste it into an issue / chat).
 
-* Verify your OpenAI-style endpoint actually returns the Chat Completions shape.
-* Check that `DirectOllamaUrl` and `DirectOllamaModel` match your setup.
+### Gateway mode: no response or error
 
-**LocalLlamaCpp: no response / fallback to gateway**
+* Verify gateway is running and reachable:
 
-* Make sure a `ULlamaComponent` exists on the same Actor (or assigned in the details panel).
-* Confirm the model is loaded successfully (check Llama-Unreal logs).
-* Ensure the Llama plugin is enabled and compatible with your engine version.
+  * `curl http://localhost:8000/health`
+  * `curl -X POST http://localhost:8000/api/vr_chat ...`
+* Check `GatewayUrl` in project settings.
+* Confirm `MODE`, `OLLAMA_BASE_URL`, `CHATTERBOX_URL` etc. in your `.env`.
+
+### DirectOllama: “choices” missing or JSON parse error
+
+* Confirm your endpoint returns a valid OpenAI Chat Completions response.
+* Make sure the URL & model name match your setup.
+* Try a raw `curl` to the endpoint to inspect the payload.
+
+### Imported character appears dark / almost black
+
+That’s not plugin-specific, but common after importing GLB/FBX:
+
+* Make sure there is at least one **light** in the level (DirectionalLight,
+  SkyLight, RectLight, etc.).
+* Double-check the material:
+
+  * If the model uses unlit / very dark base color, tweak the material instance.
+* Try **Lit** vs **Unlit** viewport modes to diagnose lighting/material issues.
 
 ---
 
 ## 8. Extending the Plugin
 
-You can extend VRSecretary easily:
+The plugin is intentionally thin and focused:
 
-* Add new backend modes to `EVRSecretaryBackendMode`.
-* Introduce streaming responses for DirectOllama using Unreal’s HTTP streaming APIs.
-* Add a small TTS-only endpoint to the FastAPI gateway and call it from DirectOllama/LocalLlamaCpp to
-  get audio for those modes as well.
+* One Blueprint component
+* Clear backends:
 
-Because all logic is funneled through `VRSecretaryComponent`, most changes can
-happen in one place while your Blueprints stay the same.
+  * Gateway
+  * DirectOllama
+  * LocalLlamaCpp stub
+
+You can extend it by:
+
+* Adding new `EVRSecretaryBackendMode` entries and implementations.
+* Supporting streaming responses (Server-Sent Events / websockets) in DirectOllama.
+* Plugging in a native llama.cpp implementation for LocalLlamaCpp.
+* Adding a separate TTS HTTP call for DirectOllama/LocalLlamaCpp to get audio.
+
+Because **all** Unreal gameplay code talks only to `UVRSecretaryComponent`, you
+can swap or upgrade backends without changing Blueprints.
 
 ---
 
-With the plugin installed and configured, your main loop becomes:
+With the plugin configured and your backend running, your loop is:
 
-> **Blueprint input → VRSecretaryComponent.SendUserText →
-> (Gateway / DirectOllama / LocalLlamaCpp) → OnAssistantResponse → Avatar text + audio**
+> **Player input → VRSecretaryComponent.SendUserText →
+> Backend (Gateway / DirectOllama / LocalLlamaCpp stub) →
+> OnAssistantResponse → Update avatar text & voice**
 
-Everything behind that interface (which LLM, which TTS, local vs remote) can be swapped
-out or upgraded without touching your gameplay logic.
+This keeps the VR experience responsive while letting you evolve the AI stack
+behind the scenes.
+Happy hacking with your VR secretary 🧠🕶️

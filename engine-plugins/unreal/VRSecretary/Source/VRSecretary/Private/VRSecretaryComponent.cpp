@@ -1,66 +1,67 @@
 #include "VRSecretaryComponent.h"
-
-#include "VRSecretaryLog.h"
 #include "VRSecretarySettings.h"
+#include "VRSecretaryLog.h"
 
 #include "HttpModule.h"
-#include "Http.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
 #include "Json.h"
 #include "JsonUtilities.h"
 #include "Misc/Guid.h"
 
-// Llama-Unreal
-#include "LlamaComponent.h"
-#include "LlamaDataTypes.h"
-
 UVRSecretaryComponent::UVRSecretaryComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
-
     Settings = GetDefault<UVRSecretarySettings>();
-    bOverrideBackendMode = false;
-    BackendMode = Settings ? Settings->BackendMode : EVRSecretaryBackendMode::GatewayOllama;
-    DefaultChatConfig = FVRSecretaryChatConfig();
-    LlamaComponent = nullptr;
+    BackendModeOverride = EVRSecretaryBackendMode::GatewayOllama;
 }
 
 void UVRSecretaryComponent::BeginPlay()
 {
     Super::BeginPlay();
+    Settings = GetDefault<UVRSecretarySettings>();
+    EnsureSessionId();
+}
 
+void UVRSecretaryComponent::EnsureSessionId()
+{
     if (SessionId.IsEmpty())
     {
         SessionId = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens);
+        UE_LOG(LogVRSecretary, Verbose, TEXT("Generated new SessionId: %s"), *SessionId);
     }
-}
-
-void UVRSecretaryComponent::SendUserTextWithDefaultConfig(const FString& UserText)
-{
-    SendUserText(UserText, DefaultChatConfig);
 }
 
 void UVRSecretaryComponent::SendUserText(const FString& UserText, const FVRSecretaryChatConfig& Config)
 {
-    if (!Settings)
+    if (UserText.IsEmpty())
     {
-        UE_LOG(LogVRSecretary, Error, TEXT("UVRSecretaryComponent: Settings asset not found."));
-        OnError.Broadcast(TEXT("VRSecretary settings not found; ensure plugin is enabled correctly."));
+        UE_LOG(LogVRSecretary, Warning, TEXT("SendUserText: UserText is empty"));
+        OnError.Broadcast(TEXT("UserText is empty"));
         return;
     }
 
-    EVRSecretaryBackendMode EffectiveMode = Settings->BackendMode;
-    if (bOverrideBackendMode)
+    if (!Settings)
     {
-        EffectiveMode = BackendMode;
+        UE_LOG(LogVRSecretary, Error, TEXT("VRSecretary settings not found"));
+        OnError.Broadcast(TEXT("VRSecretary settings not found"));
+        return;
     }
 
-    switch (EffectiveMode)
+    EnsureSessionId();
+
+    // Use project-level backend unless this component overrides it.
+    EVRSecretaryBackendMode Mode = Settings->BackendMode;
+    if (BackendModeOverride != EVRSecretaryBackendMode::GatewayOllama)
+    {
+        Mode = BackendModeOverride;
+    }
+
+    switch (Mode)
     {
     case EVRSecretaryBackendMode::GatewayOllama:
     case EVRSecretaryBackendMode::GatewayWatsonx:
-        SendViaGateway(UserText, Config);
+        SendViaGateway(UserText);
         break;
 
     case EVRSecretaryBackendMode::DirectOllama:
@@ -72,97 +73,95 @@ void UVRSecretaryComponent::SendUserText(const FString& UserText, const FVRSecre
         break;
 
     default:
-        OnError.Broadcast(TEXT("Unsupported VRSecretary backend mode."));
+        UE_LOG(LogVRSecretary, Error, TEXT("Unknown backend mode"));
+        OnError.Broadcast(TEXT("Unknown backend mode"));
         break;
     }
 }
 
-static FString NormalizeBaseUrl(const FString& InUrl)
+void UVRSecretaryComponent::SendViaGateway(const FString& UserText)
 {
-    FString Url = InUrl;
-    Url.TrimStartAndEndInline();
-
-    if (!Url.EndsWith(TEXT("/")))
-    {
-        Url += TEXT("/");
-    }
-    return Url;
-}
-
-void UVRSecretaryComponent::SendViaGateway(const FString& UserText, const FVRSecretaryChatConfig& Config)
-{
-    const FString BaseUrl = NormalizeBaseUrl(Settings->GatewayUrl);
-    const FString Url     = BaseUrl + TEXT("api/vr_chat");
-
-    UE_LOG(LogVRSecretary, Verbose, TEXT("Sending VRSecretary gateway request to %s"), *Url);
+    FString Url = Settings->GatewayUrl;
+    Url.RemoveFromEnd(TEXT("/"));
+    Url += TEXT("/api/vr_chat");
 
     TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
     Request->SetURL(Url);
     Request->SetVerb(TEXT("POST"));
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
 
-    TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
-    Root->SetStringField(TEXT("session_id"), SessionId);
-    Root->SetStringField(TEXT("user_text"), UserText);
+    TSharedPtr<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+    JsonObject->SetStringField(TEXT("session_id"), SessionId);
+    JsonObject->SetStringField(TEXT("user_text"), UserText);
 
     FString Body;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Body);
-    FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
+    FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
     Request->SetContentAsString(Body);
 
-    Request->OnProcessRequestComplete().Unbind();
-    Request->OnProcessRequestComplete().BindUObject(this, &UVRSecretaryComponent::HandleGatewayResponse);
+    Request->OnProcessRequestComplete().BindUObject(
+        this,
+        &UVRSecretaryComponent::HandleGatewayResponse
+    );
     Request->SetTimeout(Settings->HttpTimeout);
+
+    UE_LOG(LogVRSecretary, Verbose, TEXT("Sending Gateway request to %s"), *Url);
     Request->ProcessRequest();
 }
 
-void UVRSecretaryComponent::HandleGatewayResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
+void UVRSecretaryComponent::HandleGatewayResponse(
+    FHttpRequestPtr Request,
+    FHttpResponsePtr Response,
+    bool bWasSuccessful)
 {
     if (!bWasSuccessful || !Response.IsValid())
     {
-        OnError.Broadcast(TEXT("Gateway request failed or no response received."));
+        const FString Error = TEXT("Gateway request failed");
+        UE_LOG(LogVRSecretary, Error, TEXT("%s"), *Error);
+        OnError.Broadcast(Error);
         return;
     }
 
-    const int32 Code = Response->GetResponseCode();
-    if (!EHttpResponseCodes::IsOk(Code))
+    if (!EHttpResponseCodes::IsOk(Response->GetResponseCode()))
     {
-        const FString Msg = FString::Printf(TEXT("Gateway HTTP error: %d"), Code);
-        UE_LOG(LogVRSecretary, Error, TEXT("%s"), *Msg);
-        OnError.Broadcast(Msg);
+        const FString Error = FString::Printf(
+            TEXT("Gateway HTTP %d: %s"),
+            Response->GetResponseCode(),
+            *Response->GetContentAsString());
+        UE_LOG(LogVRSecretary, Error, TEXT("%s"), *Error);
+        OnError.Broadcast(Error);
         return;
     }
 
-    TSharedPtr<FJsonObject> Json;
-    const FString ResponseStr = Response->GetContentAsString();
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseStr);
+    const FString Content = Response->GetContentAsString();
 
-    if (!FJsonSerializer::Deserialize(Reader, Json) || !Json.IsValid())
+    TSharedPtr<FJsonObject> JsonObject;
+    const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Content);
+
+    if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid())
     {
-        UE_LOG(LogVRSecretary, Error, TEXT("Failed to parse gateway JSON: %s"), *ResponseStr);
-        OnError.Broadcast(TEXT("Failed to parse gateway JSON response."));
+        const FString Error = TEXT("Failed to parse gateway JSON response");
+        UE_LOG(LogVRSecretary, Error, TEXT("%s"), *Error);
+        OnError.Broadcast(Error);
         return;
     }
 
     FString AssistantText;
-    if (!Json->TryGetStringField(TEXT("assistant_text"), AssistantText))
-    {
-        OnError.Broadcast(TEXT("Gateway JSON did not contain 'assistant_text'."));
-        return;
-    }
-
     FString AudioBase64;
-    Json->TryGetStringField(TEXT("audio_wav_base64"), AudioBase64);
+    JsonObject->TryGetStringField(TEXT("assistant_text"), AssistantText);
+    JsonObject->TryGetStringField(TEXT("audio_wav_base64"), AudioBase64);
 
+    UE_LOG(LogVRSecretary, Verbose, TEXT("Gateway response text: %s"), *AssistantText);
     OnAssistantResponse.Broadcast(AssistantText, AudioBase64);
 }
 
-void UVRSecretaryComponent::SendViaDirectOllama(const FString& UserText, const FVRSecretaryChatConfig& Config)
+void UVRSecretaryComponent::SendViaDirectOllama(
+    const FString& UserText,
+    const FVRSecretaryChatConfig& Config)
 {
-    const FString BaseUrl = NormalizeBaseUrl(Settings->DirectOllamaUrl);
-    const FString Url     = BaseUrl + TEXT("v1/chat/completions");
-
-    UE_LOG(LogVRSecretary, Verbose, TEXT("Sending DirectOllama request to %s"), *Url);
+    FString Url = Settings->DirectOllamaUrl;
+    Url.RemoveFromEnd(TEXT("/"));
+    Url += TEXT("/v1/chat/completions");
 
     TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
     Request->SetURL(Url);
@@ -172,135 +171,134 @@ void UVRSecretaryComponent::SendViaDirectOllama(const FString& UserText, const F
     TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetStringField(TEXT("model"), Settings->DirectOllamaModel);
 
-    // Minimal OpenAI-style messages array: [ { "role": "user", "content": UserText } ]
+    // messages: system + user
     TArray<TSharedPtr<FJsonValue>> Messages;
+
     {
-        TSharedPtr<FJsonObject> Msg = MakeShared<FJsonObject>();
-        Msg->SetStringField(TEXT("role"), TEXT("user"));
-        Msg->SetStringField(TEXT("content"), UserText);
-        Messages.Add(MakeShared<FJsonValueObject>(Msg));
+        TSharedPtr<FJsonObject> SysMsg = MakeShared<FJsonObject>();
+        SysMsg->SetStringField(TEXT("role"), TEXT("system"));
+        SysMsg->SetStringField(
+            TEXT("content"),
+            TEXT("You are Ailey, a helpful VR secretary inside a virtual office."));
+        Messages.Add(MakeShared<FJsonValueObject>(SysMsg));
     }
+
+    {
+        TSharedPtr<FJsonObject> UserMsg = MakeShared<FJsonObject>();
+        UserMsg->SetStringField(TEXT("role"), TEXT("user"));
+        UserMsg->SetStringField(TEXT("content"), UserText);
+        Messages.Add(MakeShared<FJsonValueObject>(UserMsg));
+    }
+
     Root->SetArrayField(TEXT("messages"), Messages);
+    Root->SetBoolField(TEXT("stream"), false);
 
     Root->SetNumberField(TEXT("temperature"), Config.Temperature);
-    Root->SetNumberField(TEXT("top_p"), Config.TopP);
-    Root->SetNumberField(TEXT("presence_penalty"), Config.PresencePenalty);
-    Root->SetNumberField(TEXT("frequency_penalty"), Config.FrequencyPenalty);
-    Root->SetNumberField(TEXT("max_tokens"), Config.MaxTokens);
+    Root->SetNumberField(TEXT("top_p"),       Config.TopP);
+    Root->SetNumberField(TEXT("max_tokens"),  Config.MaxTokens);
 
     FString Body;
-    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Body);
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Body);
     FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
     Request->SetContentAsString(Body);
 
-    Request->OnProcessRequestComplete().Unbind();
-    Request->OnProcessRequestComplete().BindUObject(this, &UVRSecretaryComponent::HandleDirectOllamaResponse);
+    Request->OnProcessRequestComplete().BindUObject(
+        this,
+        &UVRSecretaryComponent::HandleDirectOllamaResponse
+    );
     Request->SetTimeout(Settings->HttpTimeout);
+
+    UE_LOG(LogVRSecretary, Verbose, TEXT("Sending DirectOllama request to %s"), *Url);
     Request->ProcessRequest();
 }
 
-void UVRSecretaryComponent::HandleDirectOllamaResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
+void UVRSecretaryComponent::HandleDirectOllamaResponse(
+    FHttpRequestPtr Request,
+    FHttpResponsePtr Response,
+    bool bWasSuccessful)
 {
     if (!bWasSuccessful || !Response.IsValid())
     {
-        OnError.Broadcast(TEXT("DirectOllama request failed or no response received."));
+        const FString Error = TEXT("Direct Ollama request failed");
+        UE_LOG(LogVRSecretary, Error, TEXT("%s"), *Error);
+        OnError.Broadcast(Error);
         return;
     }
 
-    const int32 Code = Response->GetResponseCode();
-    if (!EHttpResponseCodes::IsOk(Code))
+    if (!EHttpResponseCodes::IsOk(Response->GetResponseCode()))
     {
-        const FString Msg = FString::Printf(TEXT("DirectOllama HTTP error: %d"), Code);
-        UE_LOG(LogVRSecretary, Error, TEXT("%s"), *Msg);
-        OnError.Broadcast(Msg);
+        const FString Error = FString::Printf(
+            TEXT("Direct Ollama HTTP %d: %s"),
+            Response->GetResponseCode(),
+            *Response->GetContentAsString());
+        UE_LOG(LogVRSecretary, Error, TEXT("%s"), *Error);
+        OnError.Broadcast(Error);
         return;
     }
 
-    TSharedPtr<FJsonObject> Json;
-    const FString ResponseStr = Response->GetContentAsString();
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseStr);
+    const FString Content = Response->GetContentAsString();
 
-    if (!FJsonSerializer::Deserialize(Reader, Json) || !Json.IsValid())
+    TSharedPtr<FJsonObject> JsonObject;
+    const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Content);
+
+    if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid())
     {
-        UE_LOG(LogVRSecretary, Error, TEXT("Failed to parse DirectOllama JSON: %s"), *ResponseStr);
-        OnError.Broadcast(TEXT("Failed to parse DirectOllama JSON response."));
+        const FString Error = TEXT("Failed to parse Ollama JSON response");
+        UE_LOG(LogVRSecretary, Error, TEXT("%s"), *Error);
+        OnError.Broadcast(Error);
         return;
     }
 
-    const TArray<TSharedPtr<FJsonValue>>* ChoicesArray = nullptr;
-    if (!Json->TryGetArrayField(TEXT("choices"), ChoicesArray) || !ChoicesArray || ChoicesArray->Num() == 0)
+    // Standard OpenAI-style response: choices[0].message.content
+    const TArray<TSharedPtr<FJsonValue>>* Choices = nullptr;
+    if (!JsonObject->TryGetArrayField(TEXT("choices"), Choices) || !Choices || Choices->Num() == 0)
     {
-        OnError.Broadcast(TEXT("DirectOllama JSON did not contain 'choices[0]'."));
+        const FString Error = TEXT("Ollama response missing choices");
+        UE_LOG(LogVRSecretary, Error, TEXT("%s"), *Error);
+        OnError.Broadcast(Error);
         return;
     }
 
-    const TSharedPtr<FJsonObject> ChoiceObj = (*ChoicesArray)[0]->AsObject();
-    if (!ChoiceObj.IsValid())
+    TSharedPtr<FJsonObject> FirstChoice = (*Choices)[0]->AsObject();
+    if (!FirstChoice.IsValid())
     {
-        OnError.Broadcast(TEXT("DirectOllama choices[0] was not an object."));
+        const FString Error = TEXT("Ollama response missing first choice object");
+        UE_LOG(LogVRSecretary, Error, TEXT("%s"), *Error);
+        OnError.Broadcast(Error);
         return;
     }
 
-    TSharedPtr<FJsonObject> MessageObj;
-    if (ChoiceObj->HasField(TEXT("message")))
+    // ✅ FIX: use pointer-style TryGetObjectField matching UE 5.3 signature
+    const TSharedPtr<FJsonObject>* MessageObjPtr = nullptr;
+    if (!FirstChoice->TryGetObjectField(TEXT("message"), MessageObjPtr) ||
+        !MessageObjPtr ||
+        !MessageObjPtr->IsValid())
     {
-        MessageObj = ChoiceObj->GetObjectField(TEXT("message"));
-    }
-
-    if (!MessageObj.IsValid())
-    {
-        OnError.Broadcast(TEXT("DirectOllama choices[0] did not contain 'message'."));
+        const FString Error = TEXT("Ollama response missing message object");
+        UE_LOG(LogVRSecretary, Error, TEXT("%s"), *Error);
+        OnError.Broadcast(Error);
         return;
     }
 
     FString AssistantText;
-    if (!MessageObj->TryGetStringField(TEXT("content"), AssistantText))
-    {
-        OnError.Broadcast(TEXT("DirectOllama message did not contain 'content'."));
-        return;
-    }
+    (*MessageObjPtr)->TryGetStringField(TEXT("content"), AssistantText);
 
+    UE_LOG(LogVRSecretary, Verbose, TEXT("Direct Ollama response text: %s"), *AssistantText);
+
+    // Direct Ollama mode does not generate audio; return empty AudioBase64.
     OnAssistantResponse.Broadcast(AssistantText, TEXT(""));
 }
 
-void UVRSecretaryComponent::SendViaLocalLlamaCpp(const FString& UserText, const FVRSecretaryChatConfig& Config)
+void UVRSecretaryComponent::SendViaLocalLlamaCpp(
+    const FString& UserText,
+    const FVRSecretaryChatConfig& /*Config*/)
 {
-    // Try to auto-discover a LlamaComponent on the same actor if one was not assigned.
-    if (!LlamaComponent && GetOwner())
-    {
-        LlamaComponent = GetOwner()->FindComponentByClass<ULlamaComponent>();
-    }
+    // Stub – this is where native llama.cpp integration (e.g. via Llama-Unreal) would go.
+    UE_LOG(
+        LogVRSecretary,
+        Warning,
+        TEXT("LocalLlamaCpp backend is not wired yet; falling back to Gateway.")
+    );
 
-    if (!LlamaComponent)
-    {
-        UE_LOG(LogVRSecretary, Warning,
-            TEXT("LocalLlamaCpp backend selected but no LlamaComponent found; falling back to Gateway."));
-        SendViaGateway(UserText, Config);
-        return;
-    }
-
-    // Bind to the full-response delegate; remove any previous binding to avoid duplicates.
-    LlamaComponent->OnResponseGenerated.RemoveDynamic(this, &UVRSecretaryComponent::HandleLlamaResponse);
-    LlamaComponent->OnResponseGenerated.AddDynamic(this, &UVRSecretaryComponent::HandleLlamaResponse);
-
-    FLlamaChatPrompt Prompt;
-    Prompt.Prompt           = UserText;
-    Prompt.Role             = EChatTemplateRole::User;
-    Prompt.bAddAssistantBOS = true;
-    Prompt.bGenerateReply   = true;
-
-    UE_LOG(LogVRSecretary, Verbose, TEXT("Sending prompt to Local Llama via Llama-Unreal."));
-    LlamaComponent->InsertTemplatedPromptStruct(Prompt);
-}
-
-void UVRSecretaryComponent::HandleLlamaResponse(const FString& AssistantText)
-{
-    UE_LOG(LogVRSecretary, Verbose, TEXT("Local Llama response: %s"), *AssistantText);
-
-    OnAssistantResponse.Broadcast(AssistantText, TEXT(""));
-
-    if (LlamaComponent)
-    {
-        LlamaComponent->OnResponseGenerated.RemoveDynamic(this, &UVRSecretaryComponent::HandleLlamaResponse);
-    }
+    SendViaGateway(UserText);
 }

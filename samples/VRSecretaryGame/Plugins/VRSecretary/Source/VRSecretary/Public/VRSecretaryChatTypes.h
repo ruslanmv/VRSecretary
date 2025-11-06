@@ -3,72 +3,50 @@
 #include "CoreMinimal.h"
 #include "VRSecretaryChatTypes.generated.h"
 
-/**
- * Backend selection used globally (UVRSecretarySettings) and optionally per component.
- */
+/** Which backend to use for chat. */
 UENUM(BlueprintType)
 enum class EVRSecretaryBackendMode : uint8
 {
-    /** Use the FastAPI gateway with Ollama as the underlying model provider. */
-    GatewayOllama     UMETA(DisplayName = "Gateway (Ollama)"),
+    /** Go through the FastAPI gateway using Ollama */
+    GatewayOllama    UMETA(DisplayName = "Gateway (Ollama)"),
 
-    /** Use the FastAPI gateway with IBM watsonx.ai as the underlying provider. */
-    GatewayWatsonx    UMETA(DisplayName = "Gateway (watsonx.ai)"),
+    /** Go through the FastAPI gateway using IBM watsonx.ai */
+    GatewayWatsonx   UMETA(DisplayName = "Gateway (watsonx.ai)"),
 
-    /** Call an OpenAI-compatible HTTP endpoint directly (e.g. Ollama with an OpenAI proxy). */
-    DirectOllama      UMETA(DisplayName = "Direct Ollama (OpenAI-style)"),
+    /** Call Ollama’s OpenAI-compatible HTTP API directly from Unreal */
+    DirectOllama     UMETA(DisplayName = "Direct Ollama (HTTP)"),
 
-    /** Use a fully local llama.cpp model via the Llama-Unreal plugin. */
-    LocalLlamaCpp     UMETA(DisplayName = "Local Llama.cpp")
+    /** Placeholder for a future native llama.cpp integration */
+    LocalLlamaCpp    UMETA(DisplayName = "Local Llama.cpp (stub)")
 };
 
-/**
- * Per-request generation configuration. This is intentionally minimal and
- * maps cleanly onto typical OpenAI-style /v1/chat/completions parameters.
- */
+/** Generic sampling config passed to the backends. */
 USTRUCT(BlueprintType)
 struct FVRSecretaryChatConfig
 {
     GENERATED_BODY()
 
-    /** Sampling temperature in the range [0, 2]. */
+    /** Sampling temperature, 0.0–2.0 (typical: 0.2–1.0). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
-    float Temperature;
+    float Temperature = 0.7f;
 
-    /** Maximum number of new tokens to generate. */
+    /** Nucleus sampling probability (Top-p). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
-    int32 MaxTokens;
+    float TopP = 0.9f;
 
-    /** Nucleus sampling parameter. */
+    /** Maximum number of tokens to generate. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
-    float TopP;
-
-    /** Positive values penalise new tokens based on whether they appear in the text so far. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
-    float PresencePenalty;
-
-    /** Positive values penalise new tokens based on their existing frequency in the text so far. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
-    float FrequencyPenalty;
-
-    FVRSecretaryChatConfig()
-        : Temperature(0.7f)
-        , MaxTokens(256)
-        , TopP(1.0f)
-        , PresencePenalty(0.0f)
-        , FrequencyPenalty(0.0f)
-    {
-    }
+    int32 MaxTokens = 256;
 };
 
-/** Broadcast when the assistant has produced a full response (and optional audio). */
+/** Fired when the assistant replies. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
     FVRSecretaryOnAssistantResponse,
     const FString&, AssistantText,
-    const FString&, AudioBase64
+    const FString&, AudioWavBase64
 );
 
-/** Broadcast when any backend reports an error. */
+/** Fired when something goes wrong (HTTP failure, JSON error, etc.). */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     FVRSecretaryOnError,
     const FString&, ErrorMessage

@@ -2,23 +2,16 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Interfaces/IHttpRequest.h"    // FHttpRequestPtr
+#include "Interfaces/IHttpResponse.h"   // FHttpResponsePtr
 #include "VRSecretaryChatTypes.h"
 #include "VRSecretaryComponent.generated.h"
 
 class UVRSecretarySettings;
-class ULlamaComponent;
-class IHttpRequest;
-class IHttpResponse;
-
-typedef TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> FHttpRequestPtr;
-typedef TSharedPtr<IHttpResponse, ESPMode::ThreadSafe> FHttpResponsePtr;
 
 /**
- * Main component for interacting with the VRSecretary backends / LLMs.
- *
- * Attach this component to an actor (e.g. your VR manager or avatar) and call
- * SendUserText / SendUserTextWithDefaultConfig. Responses are delivered via
- * the OnAssistantResponse and OnError multicast delegates.
+ * Main component for interacting with the VRSecretary backends.
+ * Attach this to an actor (e.g. your VR manager or avatar) and call SendUserText.
  */
 UCLASS(ClassGroup=(VRSecretary), meta=(BlueprintSpawnableComponent))
 class VRSECRETARY_API UVRSecretaryComponent : public UActorComponent
@@ -28,71 +21,49 @@ class VRSECRETARY_API UVRSecretaryComponent : public UActorComponent
 public:
     UVRSecretaryComponent();
 
-    /**
-     * Send user text to the configured backend using the provided config.
-     * This returns immediately; results are delivered asynchronously via
-     * OnAssistantResponse / OnError.
-     */
-    UFUNCTION(BlueprintCallable, Category="VRSecretary")
-    void SendUserText(const FString& UserText, const FVRSecretaryChatConfig& Config);
+    /** Optional per-component override of the backend mode. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
+    EVRSecretaryBackendMode BackendModeOverride;
 
-    /**
-     * Convenience overload that uses DefaultChatConfig.
-     */
-    UFUNCTION(BlueprintCallable, Category="VRSecretary")
-    void SendUserTextWithDefaultConfig(const FString& UserText);
+    /** Optional: custom session ID. If empty, a GUID is generated at BeginPlay. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
+    FString SessionId;
 
-    /** Assistant response (full text + optional base64-encoded WAV audio). */
+    /** Fired when a response (text + optional audio) is received. */
     UPROPERTY(BlueprintAssignable, Category="VRSecretary")
     FVRSecretaryOnAssistantResponse OnAssistantResponse;
 
-    /** Error event (network problems, JSON parse errors, etc). */
+    /** Fired when an error occurs. */
     UPROPERTY(BlueprintAssignable, Category="VRSecretary")
     FVRSecretaryOnError OnError;
 
-    /** If true, this component overrides the global backend mode. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
-    bool bOverrideBackendMode;
-
-    /** Backend mode used when bOverrideBackendMode is true. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary", meta=(EditCondition="bOverrideBackendMode"))
-    EVRSecretaryBackendMode BackendMode;
-
-    /** Default chat configuration used when calling SendUserTextWithDefaultConfig. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
-    FVRSecretaryChatConfig DefaultChatConfig;
-
     /**
-     * Optional reference to a Llama-Unreal component used when BackendMode == LocalLlamaCpp.
-     * If not set, the component will try to auto-discover one on the same actor.
+     * Send user text to the configured backend.
+     * Returns immediately; result is delivered via delegates.
      */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary|Llama")
-    ULlamaComponent* LlamaComponent;
+    UFUNCTION(BlueprintCallable, Category="VRSecretary")
+    void SendUserText(const FString& UserText, const FVRSecretaryChatConfig& Config);
 
 protected:
     virtual void BeginPlay() override;
 
 private:
-    /** Cached pointer to global settings. */
+    /** Cached pointer to the global settings object. */
     const UVRSecretarySettings* Settings;
 
-    /** Stable session id that the gateway can use to maintain conversational context. */
-    FString SessionId;
+    /** Ensure SessionId is non-empty. */
+    void EnsureSessionId();
 
     /** Gateway (FastAPI) path: POST /api/vr_chat */
-    void SendViaGateway(const FString& UserText, const FVRSecretaryChatConfig& Config);
+    void SendViaGateway(const FString& UserText);
 
-    /** Direct HTTP call to OpenAI-style /v1/chat/completions endpoint (e.g. Ollama proxy). */
+    /** Direct HTTP call to Ollama server (no Python gateway). */
     void SendViaDirectOllama(const FString& UserText, const FVRSecretaryChatConfig& Config);
 
-    /** Local llama.cpp via Llama-Unreal. */
+    /** Local llama.cpp (stub) – currently logs and falls back to gateway. */
     void SendViaLocalLlamaCpp(const FString& UserText, const FVRSecretaryChatConfig& Config);
 
     /** Internal HTTP completion handlers. */
     void HandleGatewayResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
     void HandleDirectOllamaResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
-
-    /** Callback for Llama-Unreal full responses. */
-    UFUNCTION()
-    void HandleLlamaResponse(const FString& AssistantText);
 };
