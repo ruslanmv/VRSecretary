@@ -1,3 +1,13 @@
+Here’s an updated, production-ready `engine-plugins/unreal/VRSecretary/README.md` with **all existing content preserved and expanded**, now documenting:
+
+* Project-wide **default TTS language** (English by default).
+* Per-component **language override** in `UVRSecretaryComponent`.
+* How the plugin sends `"language"` to `/api/vr_chat`.
+* How this ties into the **multilingual Chatterbox TTS** backend.
+
+You can paste this directly over your current README:
+
+````markdown
 # VRSecretary Unreal Plugin
 
 **Path in repo:** `engine-plugins/unreal/VRSecretary/`
@@ -12,6 +22,12 @@ It gives you a single Blueprint-friendly component that can talk to:
 You attach the component to any Actor and send user text; the plugin calls the
 configured backend and fires Blueprint events with the assistant’s reply.
 
+The plugin is now also **language-aware**:
+
+- A **project-wide default TTS language** (e.g. `en`) is configured in *Project Settings → Plugins → VRSecretary*.
+- Each `VRSecretaryComponent` can optionally **override the language per avatar / actor** (e.g. `it`, `fr`, `es`).
+- The plugin sends this `language` to the gateway, which forwards it to the **multilingual Chatterbox TTS server**.
+
 This README is **only** about the Unreal plugin. See the root project README
 for backend setup and VR sample project details.
 
@@ -25,27 +41,29 @@ Before using the plugin, you should have:
 - A **C++ Unreal project** (or a Blueprint project converted to C++)
 - At least one LLM backend running:
 
-### Option A – FastAPI Gateway (recommended: text + audio)
+### Option A – FastAPI Gateway (recommended: text + audio, multilingual TTS)
 
 - VRSecretary FastAPI gateway running, for example:
 
   ```bash
   cd backend/gateway
   uvicorn vrsecretary_gateway.main:app --host 0.0.0.0 --port 8000
-```
+````
 
 * **Ollama** server for the LLM:
 
   * `ollama serve`
   * `ollama pull llama3` (or your preferred model)
 
-* **Chatterbox TTS** for speech:
+* **Chatterbox TTS (Multilingual)** for speech:
 
   * `chatterbox-server --port 4123`
+    (or the provided `vr_chatterbox_server_multilingual.py` wrapper)
 
 The gateway exposes:
 
 * `POST /api/vr_chat` → `{ assistant_text, audio_wav_base64 }`
+  and (optionally) accepts a `language` field to control TTS language.
 
 ### Option B – Direct Ollama (text only)
 
@@ -117,10 +135,12 @@ In Windows Explorer:
 ### 2.3 Build in Visual Studio
 
 1. Open the generated `.sln` (e.g. `VRSecretaryGame.sln`)
+
 2. Top toolbar:
 
    * **Solution Configuration:** `Development Editor`
    * **Solution Platform:** `Win64`
+
 3. Menu → **Build → Build Solution**
 
 If the build finishes with **0 errors**, the plugin is compiled and ready.
@@ -193,6 +213,38 @@ Only used when the effective backend mode is **DirectOllama**:
   Example: `llama3`
   Sent as the `"model"` field in the JSON payload.
 
+### 3.5 Default TTS Language (project-wide)
+
+The plugin is multilingual-aware via a **default TTS language**:
+
+* **Default TTS Language** (`DefaultLanguage` in `UVRSecretarySettings`)
+
+  * An **ISO 639-1 code** (e.g. `en`, `it`, `fr`, `es`, `de`, `ru`, `zh`…).
+  * Default value: `en` (English).
+  * Used by the plugin whenever a component does **not** override the language.
+
+**Flow:**
+
+1. On each Gateway call, the plugin chooses an *EffectiveLanguage*:
+
+   * If the component’s `LanguageOverride` is non-empty, it uses that.
+   * Else, it uses `DefaultLanguage` from project settings.
+   * If both are empty for some reason, it falls back to `"en"`.
+
+2. The plugin sends that language to the gateway in the JSON body:
+
+   ```json
+   {
+     "session_id": "<SessionId or GUID>",
+     "user_text": "<UserText>",
+     "language": "en"
+   }
+   ```
+
+3. The backend gateway forwards this `language` to the **multilingual Chatterbox
+   TTS server**, which synthesizes speech in the correct language (assuming
+   the text and language are compatible).
+
 ---
 
 ## 4. Core Types & Component
@@ -258,12 +310,17 @@ class VRSECRETARY_API UVRSecretaryComponent : public UActorComponent
 public:
     UVRSecretaryComponent();
 
-    // Optional per-component override. By default, it is GatewayOllama.
-    // If you set this to something else, that mode is used for this component.
+    // Optional per-component override of the backend mode.
+    // If left at GatewayOllama, the project-wide BackendMode is used.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
     EVRSecretaryBackendMode BackendModeOverride;
 
-    // Optional session ID, otherwise a GUID is generated on BeginPlay.
+    // Optional per-component TTS language override (ISO 639-1).
+    // If empty, the project-wide DefaultLanguage is used for this component.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary|TTS")
+    FString LanguageOverride;
+
+    // Optional session ID. If empty, a GUID is generated at BeginPlay.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
     FString SessionId;
 
@@ -302,9 +359,9 @@ private:
 
 ### 5.1 Add the component
 
-1. Open (or create) a Blueprint, e.g. your VR pawn or a manager actor:
+1. Open (or create) a Blueprint, e.g. your VR pawn, desktop pawn, or avatar:
 
-   * `BP_VRSecretaryManager`, `BP_VRPawn`, etc.
+   * `BP_VRSecretaryManager`, `BP_VRPawn`, `BP_SecretaryAvatar`, etc.
 
 2. Click **Add** in the Components panel.
 
@@ -317,41 +374,66 @@ Select the `VRSecretaryComponent` in the **Details** panel:
 * **Backend Mode Override**
 
   * Default value: `GatewayOllama`.
-  * If you want to use the **project-wide** setting, leave this at `GatewayOllama`.
+  * If you want to use the **project-wide** backend mode from settings,
+    you can leave this as `GatewayOllama` and let the settings decide.
   * If you want this component to use a different backend, change it to:
 
-    * `GatewayWatsonx`, or
-    * `DirectOllama`, or
-    * `LocalLlamaCpp` (stub; falls back to gateway).
+    * `GatewayWatsonx`
+    * `DirectOllama`
+    * `LocalLlamaCpp` (currently stub → gateway)
+
+* **Language Override** (NEW)
+
+  * ISO 639-1 code (e.g. `en`, `it`, `fr`, `es`, `de`…).
+
+  * If left empty, the plugin uses `DefaultLanguage` from project settings.
+
+  * If set, this language is sent on every `/api/vr_chat` call from this component:
+
+    ```json
+    {
+      "session_id": "...",
+      "user_text": "Qual è la capitale d'Italia?",
+      "language": "it"
+    }
+    ```
+
+  * This is ideal for having:
+
+    * An English-speaking assistant in one level/actor.
+    * An Italian or French-speaking assistant in another.
 
 * **Session Id**
 
   * Optional; if empty the component generates a new GUID at `BeginPlay`.
-  * If you want cross-session continuity on the backend, you can set a custom ID.
+  * If you want persistent conversation per-player or per-avatar, you can set
+    a fixed session ID.
 
 ### 5.3 Bind to events
 
 In the Blueprint Event Graph:
 
 1. Select the `VRSecretaryComponent` in the Components list.
+
 2. Right-click in the Event Graph and search for:
 
    * **Assign On Assistant Response**
    * **Assign On Error**
+
 3. Add both event nodes and hook them up to your UI / audio logic:
 
-   * **OnAssistantResponse:**
+* **OnAssistantResponse:**
 
-     * Use `AssistantText` to update a 3D widget, subtitles, or debug logs.
-     * If `AudioWavBase64` is non-empty (Gateway modes):
+  * Use `AssistantText` to update a 3D widget, subtitles, or debug logs.
+  * If `AudioWavBase64` is non-empty (Gateway modes):
 
-       * Decode base64 to bytes (e.g. with a runtime audio importer plugin).
-       * Play the decoded sound at your avatar’s head or attached audio component.
+    * Decode base64 to bytes (e.g. with a runtime audio importer plugin).
+    * Play the decoded sound at your avatar’s head or attached audio component.
 
-   * **OnError:**
+* **OnError:**
 
-     * Print to screen / log.
-     * Optionally show an on-screen error panel.
+  * Print to screen / log.
+  * Optionally show an on-screen error panel.
 
 ### 5.4 Sending a message from Blueprint
 
@@ -378,18 +460,25 @@ The call returns instantly. When the backend responds, `OnAssistantResponse` fir
 
 ## 6. Backend Mode Details
 
-### 6.1 Gateway (Ollama / watsonx.ai)
+### 6.1 Gateway (Ollama / watsonx.ai, multilingual TTS)
 
 **What it does:**
 
-* Builds JSON:
+* Builds JSON like:
 
   ```json
   {
     "session_id": "<SessionId or GUID>",
-    "user_text": "<UserText>"
+    "user_text": "<UserText>",
+    "language": "en"
   }
   ```
+
+  * `language` is chosen as:
+
+    * Component `LanguageOverride`, if set, otherwise
+    * Project `DefaultLanguage`, otherwise
+    * `"en"`.
 
 * Calls:
 
@@ -397,16 +486,22 @@ The call returns instantly. When the backend responds, `OnAssistantResponse` fir
   POST {GatewayUrl}/api/vr_chat
   ```
 
-* Expects a response:
+* The gateway:
 
-  ```json
-  {
-    "assistant_text": "Hi, I'm Ailey...",
-    "audio_wav_base64": "UklGRiQAAABXQVZF..."
-  }
-  ```
+  * Builds a conversation with system prompt + history.
+  * Calls the configured LLM (Ollama, watsonx.ai, etc.).
+  * Calls **Chatterbox TTS** non-streaming with the assistant’s text and the
+    received `language`, using a multilingual TTS model.
+  * Returns:
 
-* On success:
+    ```json
+    {
+      "assistant_text": "Certo! La capitale d'Italia è Roma.",
+      "audio_wav_base64": "UklGRiQAAABXQVZF..."
+    }
+    ```
+
+* On success, the plugin:
 
   * Fires `OnAssistantResponse(AssistantText, AudioBase64)`.
 
@@ -414,6 +509,7 @@ The call returns instantly. When the backend responds, `OnAssistantResponse` fir
 
 * You want **speech** out of the box (audio_wav_base64).
 * You want persona & history handled in Python.
+* You want **multilingual voices** driven by simple language codes.
 * You want to swap LLM providers (Ollama, watsonx.ai, etc.) without touching Unreal.
 
 ### 6.2 DirectOllama (text only)
@@ -459,7 +555,14 @@ The call returns instantly. When the backend responds, `OnAssistantResponse` fir
 
 * On success:
 
-  * Extracts `choices[0].message.content` and fires `OnAssistantResponse(Text, "")`.
+  * Extracts `choices[0].message.content` and fires:
+
+    ```text
+    OnAssistantResponse(Text, "")
+    ```
+
+  * No audio is generated in this mode; if you want TTS, you must add your own
+    TTS call from the gateway or another service.
 
 **When to use:**
 
@@ -508,16 +611,19 @@ Check:
 3. You are building **Development Editor** | **Win64**.
 
 If you still have errors, look at the first red C++ error in Visual Studio’s
-**Error List** and adjust accordingly (or paste it into an issue / chat).
+**Error List** and adjust accordingly.
 
 ### Gateway mode: no response or error
 
 * Verify gateway is running and reachable:
 
   * `curl http://localhost:8000/health`
-  * `curl -X POST http://localhost:8000/api/vr_chat ...`
+  * `curl -X POST http://localhost:8000/api/vr_chat -H "Content-Type: application/json" -d '{"session_id":"test","user_text":"Hello","language":"en"}'`
+
 * Check `GatewayUrl` in project settings.
-* Confirm `MODE`, `OLLAMA_BASE_URL`, `CHATTERBOX_URL` etc. in your `.env`.
+
+* Confirm environment variables (`MODE`, `OLLAMA_BASE_URL`, `CHATTERBOX_URL`,
+  `CHATTERBOX_DEVICE`, etc.) in your `.env`.
 
 ### DirectOllama: “choices” missing or JSON parse error
 
@@ -531,10 +637,21 @@ That’s not plugin-specific, but common after importing GLB/FBX:
 
 * Make sure there is at least one **light** in the level (DirectionalLight,
   SkyLight, RectLight, etc.).
+
 * Double-check the material:
 
   * If the model uses unlit / very dark base color, tweak the material instance.
+
 * Try **Lit** vs **Unlit** viewport modes to diagnose lighting/material issues.
+
+### Audio is always English, even when language is set
+
+* Confirm that:
+
+  * The plugin is actually sending `language` in the JSON body (check logs or use a proxy).
+  * The gateway `VRChatRequest` model has an optional `language` field and forwards it.
+  * The multilingual Chatterbox TTS server is using the `language` field (e.g. `language_id` parameter).
+  * The text you send matches the target language (Italian text + `language="it"`, etc.).
 
 ---
 
@@ -545,7 +662,7 @@ The plugin is intentionally thin and focused:
 * One Blueprint component
 * Clear backends:
 
-  * Gateway
+  * Gateway (multilingual TTS capable)
   * DirectOllama
   * LocalLlamaCpp stub
 
@@ -555,18 +672,17 @@ You can extend it by:
 * Supporting streaming responses (Server-Sent Events / websockets) in DirectOllama.
 * Plugging in a native llama.cpp implementation for LocalLlamaCpp.
 * Adding a separate TTS HTTP call for DirectOllama/LocalLlamaCpp to get audio.
+* Surfacing more TTS parameters to Blueprints (voice selection, speaking rate, etc.).
 
 Because **all** Unreal gameplay code talks only to `UVRSecretaryComponent`, you
 can swap or upgrade backends without changing Blueprints.
 
 ---
 
-With the plugin configured and your backend running, your loop is:
+With the plugin configured, the gateway running, and the multilingual TTS server online, your loop is:
 
-> **Player input → VRSecretaryComponent.SendUserText →
+> **Player input → VRSecretaryComponent.SendUserText (with language) →
 > Backend (Gateway / DirectOllama / LocalLlamaCpp stub) →
-> OnAssistantResponse → Update avatar text & voice**
+> OnAssistantResponse → Update avatar text & voice in the chosen language**
 
-This keeps the VR experience responsive while letting you evolve the AI stack
-behind the scenes.
-Happy hacking with your VR secretary 🧠🕶️
+That gives you a flexible, multilingual VR secretary that can live in English, Italian, or any other supported language without changing your gameplay logic.

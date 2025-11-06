@@ -25,6 +25,21 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
     EVRSecretaryBackendMode BackendModeOverride;
 
+    /**
+     * Optional per-component TTS language override (ISO 639-1, e.g. "en", "it", "fr").
+     *
+     * - If left empty, the plugin uses the project-wide DefaultLanguage
+     *   from UVRSecretarySettings.
+     * - If set, this language will be sent to the gateway for all requests
+     *   issued by this component.
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary|TTS", meta=(
+        DisplayName="Language Override",
+        ToolTip="Optional language code for TTS (ISO 639-1, e.g. \"en\", \"it\", \"fr\"). "
+                "Leave empty to use the project-wide default configured in VRSecretary settings."
+    ))
+    FString LanguageOverride;
+
     /** Optional: custom session ID. If empty, a GUID is generated at BeginPlay. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VRSecretary")
     FString SessionId;
@@ -40,6 +55,9 @@ public:
     /**
      * Send user text to the configured backend.
      * Returns immediately; result is delivered via delegates.
+     *
+     * @param UserText Text to send to the assistant.
+     * @param Config   Runtime chat configuration (voice, etc.).
      */
     UFUNCTION(BlueprintCallable, Category="VRSecretary")
     void SendUserText(const FString& UserText, const FVRSecretaryChatConfig& Config);

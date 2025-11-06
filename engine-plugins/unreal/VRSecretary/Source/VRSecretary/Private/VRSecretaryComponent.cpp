@@ -14,6 +14,9 @@ UVRSecretaryComponent::UVRSecretaryComponent()
     PrimaryComponentTick.bCanEverTick = false;
     Settings = GetDefault<UVRSecretarySettings>();
     BackendModeOverride = EVRSecretaryBackendMode::GatewayOllama;
+
+    // By default, no per-component language override.
+    LanguageOverride.Empty();
 }
 
 void UVRSecretaryComponent::BeginPlay()
@@ -81,7 +84,30 @@ void UVRSecretaryComponent::SendUserText(const FString& UserText, const FVRSecre
 
 void UVRSecretaryComponent::SendViaGateway(const FString& UserText)
 {
-    FString Url = Settings->GatewayUrl;
+    // Refresh settings in case config changed at runtime (PIE, etc.)
+    if (!Settings)
+    {
+        Settings = GetDefault<UVRSecretarySettings>();
+    }
+
+    // Decide which language to send:
+    //  - If the component has LanguageOverride set, use that.
+    //  - Otherwise, use project-wide DefaultLanguage from settings.
+    //  - If that is also empty, fall back to "en".
+    FString EffectiveLanguage = LanguageOverride;
+    if (EffectiveLanguage.IsEmpty())
+    {
+        if (Settings && !Settings->DefaultLanguage.IsEmpty())
+        {
+            EffectiveLanguage = Settings->DefaultLanguage;
+        }
+        else
+        {
+            EffectiveLanguage = TEXT("en");
+        }
+    }
+
+    FString Url = Settings ? Settings->GatewayUrl : TEXT("http://localhost:8000");
     Url.RemoveFromEnd(TEXT("/"));
     Url += TEXT("/api/vr_chat");
 
@@ -94,6 +120,9 @@ void UVRSecretaryComponent::SendViaGateway(const FString& UserText)
     JsonObject->SetStringField(TEXT("session_id"), SessionId);
     JsonObject->SetStringField(TEXT("user_text"), UserText);
 
+    // NEW: include language so the gateway can forward it to the multilingual TTS server.
+    JsonObject->SetStringField(TEXT("language"), EffectiveLanguage);
+
     FString Body;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Body);
     FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
@@ -103,9 +132,20 @@ void UVRSecretaryComponent::SendViaGateway(const FString& UserText)
         this,
         &UVRSecretaryComponent::HandleGatewayResponse
     );
-    Request->SetTimeout(Settings->HttpTimeout);
+    if (Settings)
+    {
+        Request->SetTimeout(Settings->HttpTimeout);
+    }
 
-    UE_LOG(LogVRSecretary, Verbose, TEXT("Sending Gateway request to %s"), *Url);
+    UE_LOG(
+        LogVRSecretary,
+        Verbose,
+        TEXT("Sending Gateway request to %s (session=%s, language=%s)"),
+        *Url,
+        *SessionId,
+        *EffectiveLanguage
+    );
+
     Request->ProcessRequest();
 }
 
@@ -159,7 +199,7 @@ void UVRSecretaryComponent::SendViaDirectOllama(
     const FString& UserText,
     const FVRSecretaryChatConfig& Config)
 {
-    FString Url = Settings->DirectOllamaUrl;
+    FString Url = Settings ? Settings->DirectOllamaUrl : TEXT("http://localhost:11434");
     Url.RemoveFromEnd(TEXT("/"));
     Url += TEXT("/v1/chat/completions");
 
@@ -169,7 +209,7 @@ void UVRSecretaryComponent::SendViaDirectOllama(
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
 
     TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
-    Root->SetStringField(TEXT("model"), Settings->DirectOllamaModel);
+    Root->SetStringField(TEXT("model"), Settings ? Settings->DirectOllamaModel : TEXT("llama3"));
 
     // messages: system + user
     TArray<TSharedPtr<FJsonValue>> Messages;
@@ -206,7 +246,10 @@ void UVRSecretaryComponent::SendViaDirectOllama(
         this,
         &UVRSecretaryComponent::HandleDirectOllamaResponse
     );
-    Request->SetTimeout(Settings->HttpTimeout);
+    if (Settings)
+    {
+        Request->SetTimeout(Settings->HttpTimeout);
+    }
 
     UE_LOG(LogVRSecretary, Verbose, TEXT("Sending DirectOllama request to %s"), *Url);
     Request->ProcessRequest();
@@ -268,7 +311,7 @@ void UVRSecretaryComponent::HandleDirectOllamaResponse(
         return;
     }
 
-    // ✅ FIX: use pointer-style TryGetObjectField matching UE 5.3 signature
+    // UE5.3-friendly TryGetObjectField usage
     const TSharedPtr<FJsonObject>* MessageObjPtr = nullptr;
     if (!FirstChoice->TryGetObjectField(TEXT("message"), MessageObjPtr) ||
         !MessageObjPtr ||
