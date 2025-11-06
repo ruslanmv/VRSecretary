@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     chatterbox_timeout: float = Field(30.0, env="CHATTERBOX_TIMEOUT")
     # CHATTERBOX_VOICE=female|male|neutral
     chatterbox_default_voice: str = Field("female", env="CHATTERBOX_VOICE")
+    # CHATTERBOX_LANGUAGE=en  (default multilingual TTS language, ISO 639-1)
+    chatterbox_default_language: str = Field("en", env="CHATTERBOX_LANGUAGE")
 
     # ---- watsonx.ai (future) ----
     watsonx_url: str | None = Field(None, env="WATSONX_URL")

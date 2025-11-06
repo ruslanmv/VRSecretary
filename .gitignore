@@ -197,3 +197,18 @@ uv.lock
 # - This only ignores build artifacts, caches, local environments, and IDE junk.
 ###############################################################################
 *.uasset
+
+###########################
+# Misc / copy files       #
+###########################
+
+# Exclude files containing ' copy' followed by an extension (e.g., 'file copy.py', 'file copy 2.txt')
+# The leading asterisk (*) matches anything before the space.
+* copy.*
+
+* copy *.*
+
+
+# Exclude files containing ' copy' with no extension (e.g., 'document copy', 'image copy 3')
+* copy
+

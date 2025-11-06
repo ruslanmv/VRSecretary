@@ -178,6 +178,7 @@ SAMPLE_TEXTS = {
         "Domanda": "In cosa vorresti che ti aiutassi? Sono qui per assisterti con qualsiasi domanda tu possa avere.",
         "Emozionato": "Wow! Questo è fantastico! La voce suona così naturale e chiara!",
         "Professionale": "Grazie per aver contattato il nostro team di supporto. Sarò felice di assisterti con la tua richiesta oggi.",
+        "Letteratura": "Lascia che te lo dica oggi quanto ti voglio bene quanto tu sei stato sempre per me, come hai arricchito la mia vita. Per te non avrà molta importanza. Tu sei abituato all’amore, esso non è nulla di strano per te sei stato amato e viziato da tante donne. Per me è un’altra cosa. La mia vita è stata povera d’amore, mi è mancato il meglio. Se tuttavia so che cos’è l’amore, è per merito tuo. Te ho potuto amare, te solo fra gli uomini. Tu non puoi misurare ciò che significhi. Significa la sorgente in un deserto l’albero fiorito in un terreno selvaggio. A te solo debbo che il mio cuore non sia inaridito, che sia rimasto in me un punto accessibile alla grazia",
     },
     "fr": {
         "Salutation": "Bonjour! Je suis votre assistant IA. Comment puis-je vous aider aujourd'hui?",

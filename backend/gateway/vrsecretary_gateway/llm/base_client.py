@@ -1,3 +1,5 @@
+# backend/gateway/vrsecretary_gateway/llm/base_client.py
+
 from abc import ABC, abstractmethod
 from typing import List
 

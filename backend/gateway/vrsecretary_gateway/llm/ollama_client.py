@@ -1,3 +1,5 @@
+# backend/gateway/vrsecretary_gateway/llm/ollama_client.py
+
 from typing import List
 
 import httpx
@@ -24,11 +26,12 @@ class OllamaClient(BaseLLMClient):
             base_url=settings.ollama_base_url.rstrip("/"),
             timeout=settings.ollama_timeout,
         ) as client:
-            payload = {
-                "model": settings.ollama_model,
-                "messages": [m.model_dump() for m in messages],
-                # You can add more sampling params here if desired
-            }
+            payload = \
+                {
+                    "model": settings.ollama_model,
+                    "messages": [m.model_dump() for m in messages],
+                    # You can add more sampling params here if desired
+                }
             resp = await client.post("/v1/chat/completions", json=payload)
             resp.raise_for_status()
             data = resp.json()
