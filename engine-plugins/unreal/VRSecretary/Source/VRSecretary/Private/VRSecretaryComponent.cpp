@@ -14,9 +14,7 @@ UVRSecretaryComponent::UVRSecretaryComponent()
     PrimaryComponentTick.bCanEverTick = false;
     Settings = GetDefault<UVRSecretarySettings>();
     BackendModeOverride = EVRSecretaryBackendMode::GatewayOllama;
-
-    // By default, no per-component language override.
-    LanguageOverride.Empty();
+    LanguageCode = TEXT(""); // Empty = use project default
 }
 
 void UVRSecretaryComponent::BeginPlay()
@@ -24,6 +22,10 @@ void UVRSecretaryComponent::BeginPlay()
     Super::BeginPlay();
     Settings = GetDefault<UVRSecretarySettings>();
     EnsureSessionId();
+
+    const FString EffectiveLang = GetEffectiveLanguageCode();
+    UE_LOG(LogVRSecretary, Log, TEXT("VRSecretaryComponent started (Session: %s, Language: %s)"), 
+           *SessionId, *EffectiveLang);
 }
 
 void UVRSecretaryComponent::EnsureSessionId()
@@ -33,6 +35,26 @@ void UVRSecretaryComponent::EnsureSessionId()
         SessionId = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens);
         UE_LOG(LogVRSecretary, Verbose, TEXT("Generated new SessionId: %s"), *SessionId);
     }
+}
+
+FString UVRSecretaryComponent::GetEffectiveLanguageCode() const
+{
+    // Priority:
+    // 1. Component's LanguageCode (if set)
+    // 2. Project's DefaultLanguageCode (if set)
+    // 3. Fall back to "en"
+
+    if (!LanguageCode.IsEmpty())
+    {
+        return LanguageCode;
+    }
+
+    if (Settings && !Settings->DefaultLanguageCode.IsEmpty())
+    {
+        return Settings->DefaultLanguageCode;
+    }
+
+    return TEXT("en"); // Final fallback
 }
 
 void UVRSecretaryComponent::SendUserText(const FString& UserText, const FVRSecretaryChatConfig& Config)
@@ -53,7 +75,7 @@ void UVRSecretaryComponent::SendUserText(const FString& UserText, const FVRSecre
 
     EnsureSessionId();
 
-    // Use project-level backend unless this component overrides it.
+    // Use project-level backend unless this component overrides it
     EVRSecretaryBackendMode Mode = Settings->BackendMode;
     if (BackendModeOverride != EVRSecretaryBackendMode::GatewayOllama)
     {
@@ -84,30 +106,7 @@ void UVRSecretaryComponent::SendUserText(const FString& UserText, const FVRSecre
 
 void UVRSecretaryComponent::SendViaGateway(const FString& UserText)
 {
-    // Refresh settings in case config changed at runtime (PIE, etc.)
-    if (!Settings)
-    {
-        Settings = GetDefault<UVRSecretarySettings>();
-    }
-
-    // Decide which language to send:
-    //  - If the component has LanguageOverride set, use that.
-    //  - Otherwise, use project-wide DefaultLanguage from settings.
-    //  - If that is also empty, fall back to "en".
-    FString EffectiveLanguage = LanguageOverride;
-    if (EffectiveLanguage.IsEmpty())
-    {
-        if (Settings && !Settings->DefaultLanguage.IsEmpty())
-        {
-            EffectiveLanguage = Settings->DefaultLanguage;
-        }
-        else
-        {
-            EffectiveLanguage = TEXT("en");
-        }
-    }
-
-    FString Url = Settings ? Settings->GatewayUrl : TEXT("http://localhost:8000");
+    FString Url = Settings->GatewayUrl;
     Url.RemoveFromEnd(TEXT("/"));
     Url += TEXT("/api/vr_chat");
 
@@ -116,12 +115,14 @@ void UVRSecretaryComponent::SendViaGateway(const FString& UserText)
     Request->SetVerb(TEXT("POST"));
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
 
+    // Build JSON payload with language support
     TSharedPtr<FJsonObject> JsonObject = MakeShared<FJsonObject>();
     JsonObject->SetStringField(TEXT("session_id"), SessionId);
     JsonObject->SetStringField(TEXT("user_text"), UserText);
 
-    // NEW: include language so the gateway can forward it to the multilingual TTS server.
-    JsonObject->SetStringField(TEXT("language"), EffectiveLanguage);
+    // Add language field
+    const FString EffectiveLang = GetEffectiveLanguageCode();
+    JsonObject->SetStringField(TEXT("language"), EffectiveLang);
 
     FString Body;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Body);
@@ -132,20 +133,9 @@ void UVRSecretaryComponent::SendViaGateway(const FString& UserText)
         this,
         &UVRSecretaryComponent::HandleGatewayResponse
     );
-    if (Settings)
-    {
-        Request->SetTimeout(Settings->HttpTimeout);
-    }
+    Request->SetTimeout(Settings->HttpTimeout);
 
-    UE_LOG(
-        LogVRSecretary,
-        Verbose,
-        TEXT("Sending Gateway request to %s (session=%s, language=%s)"),
-        *Url,
-        *SessionId,
-        *EffectiveLanguage
-    );
-
+    UE_LOG(LogVRSecretary, Verbose, TEXT("Sending Gateway request to %s (Language: %s)"), *Url, *EffectiveLang);
     Request->ProcessRequest();
 }
 
@@ -199,7 +189,7 @@ void UVRSecretaryComponent::SendViaDirectOllama(
     const FString& UserText,
     const FVRSecretaryChatConfig& Config)
 {
-    FString Url = Settings ? Settings->DirectOllamaUrl : TEXT("http://localhost:11434");
+    FString Url = Settings->DirectOllamaUrl;
     Url.RemoveFromEnd(TEXT("/"));
     Url += TEXT("/v1/chat/completions");
 
@@ -209,9 +199,8 @@ void UVRSecretaryComponent::SendViaDirectOllama(
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
 
     TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
-    Root->SetStringField(TEXT("model"), Settings ? Settings->DirectOllamaModel : TEXT("llama3"));
+    Root->SetStringField(TEXT("model"), Settings->DirectOllamaModel);
 
-    // messages: system + user
     TArray<TSharedPtr<FJsonValue>> Messages;
 
     {
@@ -246,10 +235,7 @@ void UVRSecretaryComponent::SendViaDirectOllama(
         this,
         &UVRSecretaryComponent::HandleDirectOllamaResponse
     );
-    if (Settings)
-    {
-        Request->SetTimeout(Settings->HttpTimeout);
-    }
+    Request->SetTimeout(Settings->HttpTimeout);
 
     UE_LOG(LogVRSecretary, Verbose, TEXT("Sending DirectOllama request to %s"), *Url);
     Request->ProcessRequest();
@@ -292,7 +278,6 @@ void UVRSecretaryComponent::HandleDirectOllamaResponse(
         return;
     }
 
-    // Standard OpenAI-style response: choices[0].message.content
     const TArray<TSharedPtr<FJsonValue>>* Choices = nullptr;
     if (!JsonObject->TryGetArrayField(TEXT("choices"), Choices) || !Choices || Choices->Num() == 0)
     {
@@ -311,7 +296,6 @@ void UVRSecretaryComponent::HandleDirectOllamaResponse(
         return;
     }
 
-    // UE5.3-friendly TryGetObjectField usage
     const TSharedPtr<FJsonObject>* MessageObjPtr = nullptr;
     if (!FirstChoice->TryGetObjectField(TEXT("message"), MessageObjPtr) ||
         !MessageObjPtr ||
@@ -328,7 +312,6 @@ void UVRSecretaryComponent::HandleDirectOllamaResponse(
 
     UE_LOG(LogVRSecretary, Verbose, TEXT("Direct Ollama response text: %s"), *AssistantText);
 
-    // Direct Ollama mode does not generate audio; return empty AudioBase64.
     OnAssistantResponse.Broadcast(AssistantText, TEXT(""));
 }
 
@@ -336,7 +319,6 @@ void UVRSecretaryComponent::SendViaLocalLlamaCpp(
     const FString& UserText,
     const FVRSecretaryChatConfig& /*Config*/)
 {
-    // Stub – this is where native llama.cpp integration (e.g. via Llama-Unreal) would go.
     UE_LOG(
         LogVRSecretary,
         Warning,
