@@ -114,7 +114,8 @@ DOCKER_PORT_OLLAMA ?= 11434
   docker-dev-down \
   docker-dev-logs \
   start-stack \
-  start
+  start \
+  test-voice
 
 # =============================================================================
 #   Helper Scripts (exported env vars; expanded by the shell)
@@ -413,6 +414,10 @@ docker-dev-logs: ## Tail logs from backend dev stack
 test: venv ## Run Python tests with pytest (root env; backend tests if installed)
 	@echo "Running tests..."
 	@$(PY_EXE) -m pytest
+
+test-voice: venv ## Run the test_voice.py example
+	@echo "Running test_voice.py example..."
+	@$(PY_EXE) examples/test_voice.py
 
 lint: venv ## Check code style with ruff
 	@echo "Linting with ruff..."
