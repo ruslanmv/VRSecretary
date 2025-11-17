@@ -1,16 +1,20 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
-name = "simple-environment"
-version = "0.1.1"                                   # bump so installers don't cache 0.1.0
-description = "Minimal environment for Jupyter Notebook (Python 3.11) with Ollama client, for VRSecretary development."
-# Chatterbox + Torch stack is really tested on 3.11; avoid 3.12 for now
-requires-python = ">=3.11,<3.12"
+name = "vrsecretary"
+version = "1.0.0"
+description = "Production-ready AI-powered VR Secretary - Unreal Engine 5 VR with local/cloud LLMs and high-quality TTS"
+# Chatterbox + Torch stack is tested on Python 3.11; avoid 3.12 for now
+requires-python = ">=3.11,<3.13"
 
 authors = [
-  { name = "Ruslan Magana Vsevolodovna" }
+  { name = "Ruslan Magana", email = "contact@ruslanmv.com" }
+]
+
+maintainers = [
+  { name = "Ruslan Magana", email = "contact@ruslanmv.com" }
 ]
 
 license = { text = "Apache-2.0" }
@@ -19,11 +23,30 @@ readme = "README.md"
 
 keywords = [
   "vr",
+  "virtual-reality",
   "ai",
   "llm",
   "ollama",
+  "unreal-engine",
+  "tts",
+  "voice-synthesis",
   "jupyter",
-  "vrsecretary"
+  "vrsecretary",
+  "chatbot",
+  "conversational-ai"
+]
+
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+  "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
 dependencies = [
@@ -77,25 +100,101 @@ cuda = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ruslanmv/VRSecretary"
+Homepage = "https://ruslanmv.com"
+Documentation = "https://github.com/ruslanmv/VRSecretary/tree/main/docs"
 Repository = "https://github.com/ruslanmv/VRSecretary"
 Issues = "https://github.com/ruslanmv/VRSecretary/issues"
+Changelog = "https://github.com/ruslanmv/VRSecretary/releases"
+"Author Website" = "https://ruslanmv.com"
 
-# 🚫 Prevent setuptools from auto-finding random local packages
-[tool.setuptools]
+# Hatchling build configuration
+[tool.hatchling.build.targets.wheel]
 packages = []
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-select = ["E", "F", "I", "N", "W"]
-ignore = ["E501"]
+select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "I",   # isort
+  "N",   # pep8-naming
+  "W",   # pycodestyle warnings
+  "UP",  # pyupgrade
+  "B",   # flake8-bugbear
+  "C4",  # flake8-comprehensions
+  "SIM", # flake8-simplify
+  "TCH", # flake8-type-checking
+  "TID", # flake8-tidy-imports
+]
+ignore = [
+  "E501",   # line too long (handled by formatter)
+  "B008",   # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["vrsecretary_gateway"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Allow unused imports in __init__.py
 
 [tool.pytest.ini_options]
 testpaths = ["backend/gateway/tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
 
-# ----------------- uv build hacks -----------------
+# ----------------- uv configuration -----------------
+[tool.uv]
+dev-dependencies = [
+  "pytest>=8.2",
+  "pytest-cov>=5.0",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.6",
+  "mypy>=1.10",
+  "black>=24.0",
+]
+
 [tool.uv.extra-build-dependencies]
 pkuseg = ["numpy==1.25.2"]
+
+# ----------------- mypy type checking ----------------
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+  "chatterbox_tts.*",
+  "ollama.*",
+  "simpleaudio.*",
+  "pyaudio.*",
+]
+ignore_missing_imports = true
+
+# ----------------- black formatting ------------------
+[tool.black]
+line-length = 100
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
