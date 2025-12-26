@@ -212,4 +212,3 @@ uv.lock
 # Exclude files containing ' copy' with no extension
 # (e.g., 'document copy', 'image copy 3')
 * copy
-/samples/VRSecretaryGame/Content/Modern_House_V1
